@@ -1,0 +1,40 @@
+{
+  "name": "home-budget-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "dotenv -e .env.local drizzle-kit generate",
+    "db:migrate": "dotenv -e .env.local drizzle-kit migrate",
+    "db:studio": "dotenv -e .env.local drizzle-kit studio"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.43.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "dotenv": "^17.4.1",
+    "drizzle-orm": "^0.45.2",
+    "lucide-react": "^0.352.0",
+    "next": "^15.0.0",
+    "pg": "^8.11.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.2.2",
+    "tailwindcss": "^3.4.1",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.4",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "autoprefixer": "^10.4.16",
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.10",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3"
+  }
+}

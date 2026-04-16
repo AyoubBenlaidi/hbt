@@ -1,0 +1,1 @@
+ALTER TABLE "expenses" ADD COLUMN "amount" numeric(12, 2) DEFAULT '0' NOT NULL;
