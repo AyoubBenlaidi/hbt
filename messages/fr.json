@@ -122,6 +122,15 @@
     "removeConfirm": "Êtes-vous sûr de vouloir supprimer ce membre ?",
     "removeSuccess": "Membre supprimé avec succès",
     "nameUpdated": "Nom du foyer mis à jour avec succès",
+    "dangerZone": "Zone de danger",
+    "deleteWarning": "Supprimer ce foyer supprimera définitivement toutes les dépenses, membres et données. Cette action est irréversible.",
+    "deleteHousehold": "Supprimer ce foyer",
+    "deleteConfirmTitle": "Êtes-vous sûr ?",
+    "deleteConfirmMessage": "Toutes les dépenses, membres et demandes d'accès seront définitivement supprimés. Cette action est irréversible.",
+    "confirmDelete": "Oui, supprimer définitivement",
+    "deleting": "Suppression...",
+    "deleteSuccess": "Foyer supprimé avec succès",
+    "deleteFailed": "Échec de la suppression du foyer",
     "ownerOnly": "Seul le propriétaire du foyer peut inviter des membres"
   },
   "expenses": {

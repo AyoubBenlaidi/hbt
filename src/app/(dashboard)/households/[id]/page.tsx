@@ -73,6 +73,10 @@ export default function HouseholdDetailPage() {
   const [showReviewed, setShowReviewed] = useState(false);
   const [reviewedRequests, setReviewedRequests] = useState<JoinRequest[]>([]);
 
+  // Delete household state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Redirect if not authenticated
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -419,6 +423,52 @@ export default function HouseholdDetailPage() {
       addToast("Failed to update household name", "error", 2000);
     } finally {
       setIsSavingName(false);
+    }
+  };
+
+  const handleDeleteHousehold = async () => {
+    if (!isOwner || !household) return;
+
+    setIsDeleting(true);
+    try {
+      // Delete join requests
+      await supabase
+        .from("household_join_requests")
+        .delete()
+        .eq("household_id", householdId);
+
+      // Get all expenses for this household
+      const { data: expenses } = await supabase
+        .from("expenses")
+        .select("id")
+        .eq("household_id", householdId);
+
+      if (expenses && expenses.length > 0) {
+        const expenseIds = expenses.map((e) => e.id);
+
+        // Delete expense payers and splits
+        await supabase.from("expense_payers").delete().in("expense_id", expenseIds);
+        await supabase.from("expense_splits").delete().in("expense_id", expenseIds);
+
+        // Delete expenses
+        await supabase.from("expenses").delete().eq("household_id", householdId);
+      }
+
+      // Delete household members
+      await supabase.from("household_members").delete().eq("household_id", householdId);
+
+      // Delete household
+      const { error } = await supabase.from("households").delete().eq("id", householdId);
+      if (error) throw error;
+
+      addToast(t("households.deleteSuccess"), "success", 2000);
+      router.push("/households");
+    } catch (err) {
+      console.error("Error deleting household:", err);
+      addToast(t("households.deleteFailed"), "error", 2000);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
     }
   };
 
@@ -936,6 +986,95 @@ export default function HouseholdDetailPage() {
             )}
           </PremiumCard>
         </div>
+      )}
+      {/* ═══ OWNER ONLY: Danger Zone ═══ */}
+      {isOwner && (
+        <PremiumCard>
+          <h2 style={{ fontSize: "18px", fontWeight: "600", color: colors.danger, marginBottom: spacing.sm }}>
+            {t("households.dangerZone")}
+          </h2>
+          <p style={{ fontSize: "13px", color: colors.text.secondary, marginBottom: spacing.lg }}>
+            {t("households.deleteWarning")}
+          </p>
+
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              style={{
+                padding: `${spacing.sm} ${spacing.lg}`,
+                backgroundColor: "transparent",
+                color: colors.danger,
+                border: `1px solid ${colors.danger}40`,
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "600",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = `${colors.danger}10`;
+                e.currentTarget.style.borderColor = colors.danger;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "transparent";
+                e.currentTarget.style.borderColor = `${colors.danger}40`;
+              }}
+            >
+              {t("households.deleteHousehold")}
+            </button>
+          ) : (
+            <div
+              style={{
+                padding: spacing.md,
+                backgroundColor: `${colors.danger}08`,
+                border: `1px solid ${colors.danger}30`,
+                borderRadius: "10px",
+              }}
+            >
+              <p style={{ fontSize: "14px", fontWeight: "600", color: colors.danger, marginBottom: spacing.xs }}>
+                {t("households.deleteConfirmTitle")}
+              </p>
+              <p style={{ fontSize: "12px", color: colors.text.secondary, marginBottom: spacing.md }}>
+                {t("households.deleteConfirmMessage")}
+              </p>
+              <div style={{ display: "flex", gap: spacing.sm }}>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.md}`,
+                    backgroundColor: "transparent",
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    color: colors.text.secondary,
+                  }}
+                >
+                  {t("households.cancel")}
+                </button>
+                <button
+                  onClick={handleDeleteHousehold}
+                  disabled={isDeleting}
+                  style={{
+                    padding: `${spacing.xs} ${spacing.md}`,
+                    backgroundColor: colors.danger,
+                    color: "white",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    cursor: isDeleting ? "not-allowed" : "pointer",
+                    opacity: isDeleting ? 0.7 : 1,
+                  }}
+                >
+                  {isDeleting ? t("households.deleting") : t("households.confirmDelete")}
+                </button>
+              </div>
+            </div>
+          )}
+        </PremiumCard>
       )}
     </div>
   );

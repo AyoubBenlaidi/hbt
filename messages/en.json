@@ -122,6 +122,15 @@
     "removeConfirm": "Are you sure you want to remove this member?",
     "removeSuccess": "Member removed successfully",
     "nameUpdated": "Household name updated successfully",
+    "dangerZone": "Danger Zone",
+    "deleteWarning": "Deleting this household will permanently remove all expenses, members, and data. This action cannot be undone.",
+    "deleteHousehold": "Delete this Household",
+    "deleteConfirmTitle": "Are you sure?",
+    "deleteConfirmMessage": "All expenses, members, and join requests will be permanently deleted. This cannot be undone.",
+    "confirmDelete": "Yes, delete permanently",
+    "deleting": "Deleting...",
+    "deleteSuccess": "Household deleted successfully",
+    "deleteFailed": "Failed to delete household",
     "ownerOnly": "Only the household owner can invite members"
   },
   "expenses": {
