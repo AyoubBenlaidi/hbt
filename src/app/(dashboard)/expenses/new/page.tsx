@@ -1,12 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { ExpenseForm } from "@/components/expenses/ExpenseForm";
 import { colors, spacing } from "@/lib/designSystem";
 
-export default function NewExpensePage() {
+function NewExpenseContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -32,5 +32,13 @@ export default function NewExpensePage() {
       householdId={householdId}
       onSuccess={() => router.push("/expenses")}
     />
+  );
+}
+
+export default function NewExpensePage() {
+  return (
+    <Suspense fallback={<div style={{ paddingTop: spacing.xl, textAlign: "center" }}>Loading...</div>}>
+      <NewExpenseContent />
+    </Suspense>
   );
 }
