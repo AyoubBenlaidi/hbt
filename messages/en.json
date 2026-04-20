@@ -182,7 +182,22 @@
     "exporting": "Exporting...",
     "exportSuccess": "Expenses exported successfully",
     "exportError": "Unable to export expenses. Please try again.",
-    "noHouseholdSelected": "Please select a household to export"
+    "noHouseholdSelected": "Please select a household to export",
+    "allTime": "All Time",
+    "filterByMonth": "Filter by month",
+    "noExpensesInPeriod": "No expenses in this period",
+    "january": "January",
+    "february": "February",
+    "march": "March",
+    "april": "April",
+    "may": "May",
+    "june": "June",
+    "july": "July",
+    "august": "August",
+    "september": "September",
+    "october": "October",
+    "november": "November",
+    "december": "December"
   },
   "common": {
     "loading": "Loading...",

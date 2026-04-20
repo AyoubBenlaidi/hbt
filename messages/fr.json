@@ -182,7 +182,22 @@
     "exporting": "Exportation en cours...",
     "exportSuccess": "Dépenses exportées avec succès",
     "exportError": "Impossible d'exporter les dépenses. Veuillez réessayer.",
-    "noHouseholdSelected": "Veuillez sélectionner un foyer à exporter"
+    "noHouseholdSelected": "Veuillez sélectionner un foyer à exporter",
+    "allTime": "Tous les temps",
+    "filterByMonth": "Filtrer par mois",
+    "noExpensesInPeriod": "Aucune dépense dans cette période",
+    "january": "Janvier",
+    "february": "Février",
+    "march": "Mars",
+    "april": "Avril",
+    "may": "Mai",
+    "june": "Juin",
+    "july": "Juillet",
+    "august": "Août",
+    "september": "Septembre",
+    "october": "Octobre",
+    "november": "Novembre",
+    "december": "Décembre"
   },
   "common": {
     "loading": "Chargement...",

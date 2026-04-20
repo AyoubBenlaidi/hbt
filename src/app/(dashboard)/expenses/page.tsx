@@ -38,6 +38,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<string>("all");
   const { t } = useTranslations();
 
   // Redirect if not authenticated
@@ -177,7 +178,8 @@ export default function ExpensesPage() {
         return;
       }
 
-      await exportHouseholdExpensesToXlsx(expenses, selectedHousehold.name);
+      // Export filtered expenses
+      await exportHouseholdExpensesToXlsx(filteredExpenses, selectedHousehold.name);
       addToast(t("expenses.exportSuccess"), "success", 2000);
     } catch (err) {
       console.error("Error exporting expenses:", err);
@@ -186,6 +188,84 @@ export default function ExpensesPage() {
       setExporting(false);
     }
   };
+
+  // Generate intelligent filters based on expense dates
+  const generateFilters = () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    
+    const filters: { id: string; label: string; year?: number; month?: number }[] = [];
+    const yearsWithExpenses = new Set<number>();
+    const monthsInCurrentYear = new Set<number>();
+
+    expenses.forEach((exp) => {
+      const date = new Date(exp.expense_date);
+      const expYear = date.getFullYear();
+      const expMonth = date.getMonth();
+
+      if (expYear === currentYear) {
+        monthsInCurrentYear.add(expMonth);
+      } else {
+        yearsWithExpenses.add(expYear);
+      }
+    });
+
+    // Add months for current year (if any)
+    if (monthsInCurrentYear.size > 0) {
+      const monthNames = [
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december"
+      ];
+      
+      const sortedMonths = Array.from(monthsInCurrentYear).sort((a, b) => b - a);
+      sortedMonths.forEach((month) => {
+        filters.push({
+          id: `${currentYear}-${month}`,
+          label: t(`expenses.${monthNames[month]}`),
+          year: currentYear,
+          month,
+        });
+      });
+    }
+
+    // Add years for past/future years
+    const sortedYears = Array.from(yearsWithExpenses).sort((a, b) => b - a);
+    sortedYears.forEach((year) => {
+      filters.push({
+        id: `${year}`,
+        label: `${year}`,
+        year,
+      });
+    });
+
+    return filters;
+  };
+
+  // Filter expenses based on selected filter
+  const getFilteredExpenses = () => {
+    if (selectedFilter === "all") return expenses;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    return expenses.filter((exp) => {
+      const date = new Date(exp.expense_date);
+      const expYear = date.getFullYear();
+      const expMonth = date.getMonth();
+
+      if (selectedFilter.includes("-")) {
+        // Month filter (format: YYYY-M)
+        const [filterYear, filterMonth] = selectedFilter.split("-");
+        return expYear === parseInt(filterYear) && expMonth === parseInt(filterMonth);
+      } else {
+        // Year filter
+        return expYear === parseInt(selectedFilter);
+      }
+    });
+  };
+
+  const filters = generateFilters();
+  const filteredExpenses = getFilteredExpenses();
 
   if (authLoading || loading) {
     return <div style={{ paddingTop: spacing.xl, textAlign: "center" }}>{t("common.loading")}</div>;
@@ -216,7 +296,7 @@ export default function ExpensesPage() {
         <h1 style={{ fontSize: "28px", fontWeight: "700" }}>{t("expenses.title")}</h1>
         <button
           onClick={handleExportExpenses}
-          disabled={exporting || expenses.length === 0}
+          disabled={exporting || filteredExpenses.length === 0}
           aria-label={t("expenses.export")}
           style={{
             display: "flex",
@@ -229,12 +309,12 @@ export default function ExpensesPage() {
             color: exporting ? colors.text.muted : colors.text.primary,
             fontSize: "14px",
             fontWeight: "500",
-            cursor: exporting || expenses.length === 0 ? "not-allowed" : "pointer",
-            opacity: exporting || expenses.length === 0 ? 0.6 : 1,
+            cursor: exporting || filteredExpenses.length === 0 ? "not-allowed" : "pointer",
+            opacity: exporting || filteredExpenses.length === 0 ? 0.6 : 1,
             transition: `all 150ms ease-out`,
           }}
           onMouseEnter={(e) => {
-            if (!exporting && expenses.length > 0) {
+            if (!exporting && filteredExpenses.length > 0) {
               e.currentTarget.style.backgroundColor = colors.hover;
             }
           }}
@@ -280,6 +360,69 @@ export default function ExpensesPage() {
         </div>
       </div>
 
+      {/* Month/Year Filters */}
+      {filters.length > 0 && (
+        <div style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap", alignItems: "center" }}>
+          <button
+            onClick={() => setSelectedFilter("all")}
+            style={{
+              padding: `${spacing.xs} ${spacing.md}`,
+              borderRadius: "20px",
+              border: `1px solid ${selectedFilter === "all" ? colors.primary : colors.border}`,
+              backgroundColor: selectedFilter === "all" ? colors.primary : "transparent",
+              color: selectedFilter === "all" ? "white" : colors.text.primary,
+              fontSize: "13px",
+              fontWeight: "500",
+              cursor: "pointer",
+              transition: `all 150ms ease-out`,
+            }}
+            onMouseEnter={(e) => {
+              if (selectedFilter !== "all") {
+                e.currentTarget.style.backgroundColor = colors.hover;
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (selectedFilter !== "all") {
+                e.currentTarget.style.backgroundColor = "transparent";
+              }
+            }}
+          >
+            {t("expenses.allTime")}
+          </button>
+
+          {filters.map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => setSelectedFilter(filter.id)}
+              style={{
+                padding: `${spacing.xs} ${spacing.md}`,
+                borderRadius: "20px",
+                border: `1px solid ${selectedFilter === filter.id ? colors.primary : colors.border}`,
+                backgroundColor: selectedFilter === filter.id ? colors.primary : "transparent",
+                color: selectedFilter === filter.id ? "white" : colors.text.primary,
+                fontSize: "13px",
+                fontWeight: "500",
+                cursor: "pointer",
+                transition: `all 150ms ease-out`,
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => {
+                if (selectedFilter !== filter.id) {
+                  e.currentTarget.style.backgroundColor = colors.hover;
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedFilter !== filter.id) {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }
+              }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Expenses List */}
       <div>
         <PremiumCard>
@@ -290,9 +433,9 @@ export default function ExpensesPage() {
               marginBottom: `-${spacing.md}px`,
             }}
           >
-            {expenses.length > 0 ? (
+            {filteredExpenses.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column" }}>
-                {expenses.map((expense) => (
+                {filteredExpenses.map((expense) => (
                   <ExpenseItem
                     key={expense.id}
                     expense={expense}
@@ -303,7 +446,7 @@ export default function ExpensesPage() {
               </div>
             ) : (
               <p style={{ textAlign: "center", color: colors.text.secondary, paddingTop: spacing.lg, padding: spacing.md }}>
-                                {t("expenses.noExpensesYet")}
+                {selectedFilter === "all" ? t("expenses.noExpensesYet") : t("expenses.noExpensesInPeriod")}
               </p>
             )}
           </div>
