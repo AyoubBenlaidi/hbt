@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase/client";
@@ -9,6 +10,7 @@ import { PremiumCard, ActionButton } from "@/components/ui/PremiumComponents";
 import { ExpenseItem } from "@/components/expenses/ExpenseItem";
 import { colors, spacing } from "@/lib/designSystem";
 import { useTranslations } from "@/hooks/useI18n";
+import { exportHouseholdExpensesToXlsx } from "@/services/exportExpensesToXlsx";
 
 interface Expense {
   id: string;
@@ -35,6 +37,7 @@ export default function ExpensesPage() {
   const [selectedHouseholdId, setSelectedHouseholdId] = useState<string>("");
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const { t } = useTranslations();
 
   // Redirect if not authenticated
@@ -100,11 +103,26 @@ export default function ExpensesPage() {
             notes,
             created_by_user_id,
             household_id,
+            created_at,
+            updated_at,
             expense_payers(
               amount,
               household_members(
                 id,
-                user_id
+                user_id,
+                users(
+                  display_name
+                )
+              )
+            ),
+            expense_splits(
+              amount,
+              household_members(
+                id,
+                user_id,
+                users(
+                  display_name
+                )
               )
             )
           `)
@@ -145,8 +163,32 @@ export default function ExpensesPage() {
     router.push(`/expenses/${expenseId}/edit`);
   };
 
+  const handleExportExpenses = async () => {
+    if (!selectedHouseholdId) {
+      addToast(t("expenses.noHouseholdSelected"), "info", 2000);
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const selectedHousehold = households.find((h) => h.id === selectedHouseholdId);
+      if (!selectedHousehold) {
+        addToast(t("expenses.noHouseholdSelected"), "error", 2000);
+        return;
+      }
+
+      await exportHouseholdExpensesToXlsx(expenses, selectedHousehold.name);
+      addToast(t("expenses.exportSuccess"), "success", 2000);
+    } catch (err) {
+      console.error("Error exporting expenses:", err);
+      addToast(t("expenses.exportError"), "error", 2000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (authLoading || loading) {
-    return <div style={{ paddingTop: spacing.xl, textAlign: "center" }}>Loading...</div>;
+    return <div style={{ paddingTop: spacing.xl, textAlign: "center" }}>{t("common.loading")}</div>;
   }
 
   if (households.length === 0) {
@@ -169,9 +211,44 @@ export default function ExpensesPage() {
         boxSizing: "border-box",
       }}
     >
+      {/* Page Title with Export Button */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg }}>
+        <h1 style={{ fontSize: "28px", fontWeight: "700" }}>{t("expenses.title")}</h1>
+        <button
+          onClick={handleExportExpenses}
+          disabled={exporting || expenses.length === 0}
+          aria-label={t("expenses.export")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: spacing.sm,
+            padding: `${spacing.xs} ${spacing.md}`,
+            border: `1px solid ${colors.border}`,
+            borderRadius: "6px",
+            backgroundColor: colors.card,
+            color: exporting ? colors.text.muted : colors.text.primary,
+            fontSize: "14px",
+            fontWeight: "500",
+            cursor: exporting || expenses.length === 0 ? "not-allowed" : "pointer",
+            opacity: exporting || expenses.length === 0 ? 0.6 : 1,
+            transition: `all 150ms ease-out`,
+          }}
+          onMouseEnter={(e) => {
+            if (!exporting && expenses.length > 0) {
+              e.currentTarget.style.backgroundColor = colors.hover;
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.backgroundColor = colors.card;
+          }}
+        >
+          <Download size={16} />
+          {exporting ? t("expenses.exporting") : t("expenses.export")}
+        </button>
+      </div>
+
       {/* Household Selector */}
       <div>
-        <h1 style={{ fontSize: "28px", fontWeight: "700", marginBottom: spacing.lg }}>{t("expenses.title")}</h1>
         <div style={{ display: "flex", gap: spacing.md, justifyContent: "space-between", alignItems: "center", marginBottom: spacing.lg }}>
           <div style={{ flex: 1 }}>
             <select

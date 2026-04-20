@@ -177,7 +177,12 @@
     "confirm": "Confirm",
     "update": "Update",
     "editExpenseTitle": "Edit Expense",
-    "addExpenseTitle": "Add Expense"
+    "addExpenseTitle": "Add Expense",
+    "export": "Export",
+    "exporting": "Exporting...",
+    "exportSuccess": "Expenses exported successfully",
+    "exportError": "Unable to export expenses. Please try again.",
+    "noHouseholdSelected": "Please select a household to export"
   },
   "common": {
     "loading": "Loading...",

@@ -177,7 +177,12 @@
     "confirm": "Confirmer",
     "update": "Mettre à jour",
     "editExpenseTitle": "Modifier la Dépense",
-    "addExpenseTitle": "Ajouter une Dépense"
+    "addExpenseTitle": "Ajouter une Dépense",
+    "export": "Exporter",
+    "exporting": "Exportation en cours...",
+    "exportSuccess": "Dépenses exportées avec succès",
+    "exportError": "Impossible d'exporter les dépenses. Veuillez réessayer.",
+    "noHouseholdSelected": "Veuillez sélectionner un foyer à exporter"
   },
   "common": {
     "loading": "Chargement...",
