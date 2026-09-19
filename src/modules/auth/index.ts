@@ -89,9 +89,14 @@ export async function getCurrentUser(): Promise<SupabaseUser | null> {
 /**
  * Reset password
  */
-export async function resetPassword(email: string): Promise<{ error: Error | null }> {
+export async function resetPassword(
+  email: string,
+  redirectTo?: string
+): Promise<{ error: Error | null }> {
   try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo,
+    });
     return { error };
   } catch (error) {
     return { error: error as Error };

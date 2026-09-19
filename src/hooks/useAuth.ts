@@ -132,6 +132,55 @@ export function useAuth() {
     }
   };
 
+  const resetPassword = async (email: string) => {
+    setError("");
+    setLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+        // Must be listed in Supabase Auth > URL Configuration > Redirect URLs,
+        // otherwise Supabase silently falls back to the Site URL.
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+
+      if (authError) {
+        setError(authError.message);
+        return { success: false, error: authError.message };
+      }
+
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send reset email";
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    setError("");
+    setLoading(true);
+    try {
+      const { data, error: authError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (authError) {
+        setError(authError.message);
+        return { success: false, error: authError.message };
+      }
+
+      setUser(data.user);
+      return { success: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to update password";
+      setError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     user,
     loading,
@@ -139,6 +188,8 @@ export function useAuth() {
     signUp,
     signIn,
     signOut,
+    resetPassword,
+    updatePassword,
     isAuthenticated: !!user,
   };
 }
