@@ -93,13 +93,16 @@ export async function GET(request: NextRequest) {
         throw claimError;
       }
 
-      const failures: string[] = [];
+      const failures: { email: string; error: string }[] = [];
       for (const recipient of recipients) {
         try {
           await sendEmail({ to: recipient.email!, ...renderMonthlyReportEmail(report, recipient) });
         } catch (err) {
           console.error(`Monthly report: failed to email ${recipient.email}`, err);
-          failures.push(recipient.email!);
+          failures.push({
+            email: recipient.email!,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
 
@@ -114,7 +117,8 @@ export async function GET(request: NextRequest) {
 
       results.push({
         householdId: household.id,
-        status: failures.length === 0 ? "sent" : "partial",
+        status:
+          failures.length === 0 ? "sent" : failures.length === recipients.length ? "failed" : "partial",
         sent: recipients.length - failures.length,
         failures,
       });
