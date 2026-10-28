@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
 import { supabase } from "@/lib/supabase/client";
@@ -90,6 +90,20 @@ export function ExpenseForm({ householdId, expenseId, initialExpense, isDuplicat
 
     fetchMembers();
   }, [householdId]);
+
+  // New expense: default to "paid by me" and "split between all active members"
+  const defaultsApplied = useRef(!!initialExpense);
+  useEffect(() => {
+    if (defaultsApplied.current || !user || householdMembers.length === 0) return;
+    defaultsApplied.current = true;
+
+    const me = householdMembers.find((m) => m.user_id === user.id);
+    setFormData((prev) => ({
+      ...prev,
+      payers: prev.payers.length === 0 && me ? [me.id] : prev.payers,
+      splits: prev.splits.length === 0 ? householdMembers.map((m) => m.id) : prev.splits,
+    }));
+  }, [user, householdMembers]);
 
   const getMemberName = (member: HouseholdMember) => {
     if (Array.isArray(member.users) && member.users[0]) {
