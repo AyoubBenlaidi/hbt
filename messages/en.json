@@ -178,6 +178,8 @@
     "update": "Update",
     "editExpenseTitle": "Edit Expense",
     "addExpenseTitle": "Add Expense",
+    "duplicateExpenseTitle": "Duplicate Expense",
+    "duplicateNotFound": "Expense to duplicate not found",
     "export": "Export",
     "exporting": "Exporting...",
     "exportSuccess": "Expenses exported successfully",

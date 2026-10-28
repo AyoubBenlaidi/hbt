@@ -36,16 +36,18 @@ interface ExpenseFormProps {
   householdId: string;
   expenseId?: string;
   initialExpense?: Expense;
+  /** Prefilled copy of an existing expense: opens directly on the review step */
+  isDuplicate?: boolean;
   onSuccess?: () => void;
 }
 
-export function ExpenseForm({ householdId, expenseId, initialExpense, onSuccess }: ExpenseFormProps) {
+export function ExpenseForm({ householdId, expenseId, initialExpense, isDuplicate, onSuccess }: ExpenseFormProps) {
   const { user } = useAuth();
   const { addToast } = useToast();
   const { t } = useTranslations();
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [currentStep, setCurrentStep] = useState<ExpenseStep>("amount");
+  const [currentStep, setCurrentStep] = useState<ExpenseStep>(isDuplicate ? "review" : "amount");
   const [formData, setFormData] = useState({
     description: initialExpense?.description || "",
     amount: initialExpense?.amount?.toString() || "",
@@ -241,7 +243,11 @@ export function ExpenseForm({ householdId, expenseId, initialExpense, onSuccess 
     >
       <div>
         <h1 style={{ fontSize: "28px", fontWeight: "700", marginBottom: spacing.lg }}>
-                    {isEditMode ? t("expenses.editExpenseTitle") : t("expenses.addExpenseTitle")}
+                    {isEditMode
+                      ? t("expenses.editExpenseTitle")
+                      : isDuplicate
+                        ? t("expenses.duplicateExpenseTitle")
+                        : t("expenses.addExpenseTitle")}
         </h1>
 
         {/* Progress Indicator */}
