@@ -164,6 +164,11 @@ export default function ExpensesPage() {
     router.push(`/expenses/${expenseId}/edit`);
   };
 
+  const handleDuplicateExpense = (expenseId: string) => {
+    if (!selectedHouseholdId) return;
+    router.push(`/expenses/new?householdId=${selectedHouseholdId}&duplicateFrom=${expenseId}`);
+  };
+
   const handleExportExpenses = async () => {
     if (!selectedHouseholdId) {
       addToast(t("expenses.noHouseholdSelected"), "info", 2000);
@@ -440,6 +445,7 @@ export default function ExpensesPage() {
                     key={expense.id}
                     expense={expense}
                     onEdit={handleEditExpense}
+                    onDuplicate={handleDuplicateExpense}
                     onDelete={handleDeleteExpense}
                   />
                 ))}

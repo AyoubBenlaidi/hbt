@@ -178,6 +178,8 @@
     "update": "Mettre à jour",
     "editExpenseTitle": "Modifier la Dépense",
     "addExpenseTitle": "Ajouter une Dépense",
+    "duplicateExpenseTitle": "Dupliquer la Dépense",
+    "duplicateNotFound": "Dépense à dupliquer introuvable",
     "export": "Exporter",
     "exporting": "Exportation en cours...",
     "exportSuccess": "Dépenses exportées avec succès",

@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { Avatar } from "@/components/profile/Avatar";
-import { TrashIcon, PencilIcon } from "@/components/icons/NavigationIcons";
+import { TrashIcon, PencilIcon, CopyIcon } from "@/components/icons/NavigationIcons";
 import { colors, spacing } from "@/lib/designSystem";
 
 interface ExpensePayer {
@@ -28,10 +28,11 @@ interface ExpenseItemProps {
     expense_payers?: ExpensePayer[];
   };
   onEdit: (expenseId: string) => void;
+  onDuplicate?: (expenseId: string) => void;
   onDelete: (expenseId: string) => void;
 }
 
-export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
+export function ExpenseItem({ expense, onEdit, onDuplicate, onDelete }: ExpenseItemProps) {
   const payers = expense.expense_payers?.map((p) => ({
     user_id: p.household_members?.user_id,
     amount: p.amount,
@@ -44,7 +45,7 @@ export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "1fr auto auto auto",
+        gridTemplateColumns: `1fr auto auto${onDuplicate ? " auto" : ""} auto`,
         alignItems: "center",
         gap: spacing.md,
         padding: `12px ${spacing.md}px`,
@@ -130,6 +131,37 @@ export function ExpenseItem({ expense, onEdit, onDelete }: ExpenseItemProps) {
       >
         <PencilIcon size={16} color="currentColor" />
       </button>
+
+      {/* DUPLICATE Button */}
+      {onDuplicate && (
+        <button
+          onClick={() => onDuplicate(expense.id)}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: "6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: "6px",
+            transition: "all 0.15s ease",
+            color: colors.text.secondary,
+            backgroundColor: "transparent",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.color = colors.primary;
+            (e.currentTarget as HTMLElement).style.backgroundColor = `${colors.primary}15`;
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.color = colors.text.secondary;
+            (e.currentTarget as HTMLElement).style.backgroundColor = "transparent";
+          }}
+          title="Duplicate expense"
+        >
+          <CopyIcon size={16} color="currentColor" />
+        </button>
+      )}
 
       {/* DELETE Button */}
       <button
