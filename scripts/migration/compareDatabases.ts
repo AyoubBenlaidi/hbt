@@ -24,6 +24,15 @@ export const APP_TABLES = [
   "monthly_reports",
 ] as const;
 
+/**
+ * Columns that only exist in the target (Neon) by design: compared rows
+ * exclude them. users.email_verified / image are Better Auth fields, filled
+ * by the auth import after the data copy.
+ */
+export const TARGET_ONLY_COLUMNS: Record<string, string[]> = {
+  users: ["email_verified", "image"],
+};
+
 export interface TableSnapshot {
   columns: string[];
   rows: number;
@@ -38,7 +47,11 @@ export interface TableComparison {
   issues: string[];
 }
 
-async function snapshotTable(db: Queryable, table: string): Promise<TableSnapshot | null> {
+async function snapshotTable(
+  db: Queryable,
+  table: string,
+  excludedColumns: string[]
+): Promise<TableSnapshot | null> {
   const columns = (
     await db.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
@@ -46,14 +59,17 @@ async function snapshotTable(db: Queryable, table: string): Promise<TableSnapsho
        ORDER BY column_name`,
       [table]
     )
-  ).rows.map((r) => r.column_name);
+  )
+    .rows.map((r) => r.column_name)
+    .filter((c) => !excludedColumns.includes(c));
 
   if (columns.length === 0) return null;
 
   const { rows } = await db.query<{ rows: number; checksum: string | null }>(
     `SELECT count(*)::int AS rows,
-            md5(string_agg(to_jsonb(t)::text, E'\\n' ORDER BY t.id::text)) AS checksum
-     FROM "${table}" t`
+            md5(string_agg((to_jsonb(t) - $1::text[])::text, E'\\n' ORDER BY t.id::text)) AS checksum
+     FROM "${table}" t`,
+    [excludedColumns]
   );
 
   return { columns, rows: rows[0].rows, checksum: rows[0].checksum ?? "" };
@@ -62,7 +78,8 @@ async function snapshotTable(db: Queryable, table: string): Promise<TableSnapsho
 export async function compareDatabases(
   source: Queryable,
   target: Queryable,
-  tables: readonly string[] = APP_TABLES
+  tables: readonly string[] = APP_TABLES,
+  targetOnlyColumns: Record<string, string[]> = TARGET_ONLY_COLUMNS
 ): Promise<TableComparison[]> {
   await source.query("SET TIME ZONE 'UTC'");
   await target.query("SET TIME ZONE 'UTC'");
@@ -70,7 +87,8 @@ export async function compareDatabases(
   const results: TableComparison[] = [];
 
   for (const table of tables) {
-    const [s, t] = [await snapshotTable(source, table), await snapshotTable(target, table)];
+    const excluded = targetOnlyColumns[table] ?? [];
+    const [s, t] = [await snapshotTable(source, table, excluded), await snapshotTable(target, table, excluded)];
     const issues: string[] = [];
 
     if (!s) issues.push("missing in source");

@@ -43,7 +43,8 @@ export default function SignupPage() {
 
     const result = await signUp(email, password, displayName);
     if (result.success) {
-      router.push("/login?message=Account created successfully. Please sign in.");
+      // Better Auth signs the new user in right away
+      router.push("/households");
     } else {
       setError(result.error || "Failed to create account");
     }

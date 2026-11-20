@@ -12,13 +12,26 @@ export default function LoginPage() {
   const [error, setError] = React.useState<string>("");
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
+  const [message, setMessage] = React.useState("");
+  const [next, setNext] = React.useState("/households");
+
+  // ?message=… from signup/reset, ?next=… from the middleware redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setMessage(params.get("message") || "");
+    const target = params.get("next");
+    // Same-origin paths only
+    if (target && target.startsWith("/") && !target.startsWith("//")) {
+      setNext(target);
+    }
+  }, []);
 
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      router.push("/households");
+      router.push(next);
     }
-  }, [isAuthenticated, router]);
+  }, [isAuthenticated, router, next]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -31,7 +44,7 @@ export default function LoginPage() {
 
     const result = await signIn(email, password);
     if (result.success) {
-      router.push("/households");
+      router.push(next);
     } else {
       setError(result.error || "Failed to sign in");
     }
@@ -40,6 +53,12 @@ export default function LoginPage() {
   return (
     <Card>
       <h1 className="text-2xl font-bold mb-6 text-center">Login</h1>
+
+      {message && !(error || authError) && (
+        <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+          {message}
+        </div>
+      )}
 
       {(error || authError) && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">

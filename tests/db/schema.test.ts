@@ -31,6 +31,7 @@ const tableNames = async () =>
 describe("migrations", () => {
   it("create every table used by the app", async () => {
     expect(await tableNames()).toEqual([
+      "accounts",
       "expense_payers",
       "expense_splits",
       "expenses",
@@ -38,8 +39,10 @@ describe("migrations", () => {
       "household_members",
       "households",
       "monthly_reports",
+      "sessions",
       "user_profiles",
       "users",
+      "verifications",
     ]);
   });
 });

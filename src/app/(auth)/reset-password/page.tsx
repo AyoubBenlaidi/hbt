@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, Input, Button, Label } from "@/components/ui";
 
@@ -13,47 +12,24 @@ export default function ResetPasswordPage() {
   const router = useRouter();
   const { updatePassword, loading } = useAuth();
   const [status, setStatus] = useState<Status>("checking");
+  const [token, setToken] = useState("");
   const [linkError, setLinkError] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [formError, setFormError] = useState("");
 
   useEffect(() => {
-    // Supabase appends #error=...&error_description=... to the redirect
-    // when the recovery link itself is invalid or has expired.
-    const hash = window.location.hash;
-    if (hash.includes("error=")) {
-      const params = new URLSearchParams(hash.substring(1));
-      setLinkError(
-        params.get("error_description")?.replace(/\+/g, " ") ||
-          "This reset link is invalid or has expired."
-      );
+    // The emailed link goes through /api/auth/reset-password/:token, which
+    // redirects here with ?token=… or, for an invalid or expired link, ?error=INVALID_TOKEN
+    const params = new URLSearchParams(window.location.search);
+    const linkToken = params.get("token");
+    if (params.get("error") || !linkToken) {
+      setLinkError("This reset link is invalid or has expired.");
       setStatus("invalid");
       return;
     }
-
-    // A valid recovery link makes supabase-js parse the #access_token in the
-    // URL and emit this event once the recovery session is established.
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setStatus("ready");
-      }
-    });
-
-    // getSession() awaits that same parsing internally, so it also resolves
-    // once the recovery session (if any) is ready.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setStatus("ready");
-      } else {
-        setLinkError("This reset link is invalid or has expired.");
-        setStatus((current) => (current === "checking" ? "invalid" : current));
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    setToken(linkToken);
+    setStatus("ready");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -69,14 +45,14 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    const result = await updatePassword(password);
+    const result = await updatePassword(token, password);
     if (!result.success) {
       setFormError(result.error || "Failed to update password");
       return;
     }
 
     setStatus("done");
-    setTimeout(() => router.push("/households"), 1500);
+    setTimeout(() => router.push("/login?message=Password updated. Please sign in."), 1500);
   };
 
   if (status === "checking") {
@@ -103,7 +79,7 @@ export default function ResetPasswordPage() {
     return (
       <Card>
         <h1 className="text-2xl font-bold mb-4 text-center">Password updated</h1>
-        <p className="text-center text-gray-600">Redirecting you...</p>
+        <p className="text-center text-gray-600">Redirecting you to sign in...</p>
       </Card>
     );
   }

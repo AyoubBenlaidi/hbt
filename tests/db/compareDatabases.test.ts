@@ -82,6 +82,13 @@ describe("compareDatabases", () => {
     expect(users.issues).toContain("columns only in source: phone");
   });
 
+  it("ignores the Better Auth columns that only exist in the target", async () => {
+    await source.client.query("ALTER TABLE users DROP COLUMN email_verified, DROP COLUMN image");
+    await target.client.query("UPDATE users SET email_verified = true");
+    const users = (await compareDatabases(source.client, target.client)).find((r) => r.table === "users")!;
+    expect(users.issues).toEqual([]);
+  });
+
   it("is independent of the session time zone", async () => {
     await source.client.query("SET TIME ZONE 'Europe/Paris'");
     const results = await compareDatabases(source.client, target.client);

@@ -23,9 +23,67 @@ export const users = pgTable("users", {
   id: uuid("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   displayName: varchar("display_name", { length: 255 }).notNull(),
+  // Better Auth user fields (the auth "user" model is this table, "name" ↔ display_name)
+  emailVerified: boolean("email_verified").notNull().default(false),
+  image: text("image"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+/**
+ * Auth Sessions Table (Better Auth)
+ */
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  userIdx: index("idx_sessions_user").on(t.userId),
+}));
+
+/**
+ * Auth Accounts Table (Better Auth)
+ * One row per sign-in method; email/password uses providerId "credential"
+ */
+export const accounts = pgTable("accounts", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accountId: text("account_id").notNull(),
+  providerId: text("provider_id").notNull(),
+  // scrypt (Better Auth) or bcrypt (imported from Supabase Auth)
+  password: text("password"),
+  accessToken: text("access_token"),
+  refreshToken: text("refresh_token"),
+  idToken: text("id_token"),
+  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
+  scope: text("scope"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  providerAccountIdx: uniqueIndex("idx_accounts_provider_account").on(t.providerId, t.accountId),
+  userIdx: index("idx_accounts_user").on(t.userId),
+}));
+
+/**
+ * Auth Verifications Table (Better Auth)
+ * Short-lived tokens: password reset, email verification
+ */
+export const verifications = pgTable("verifications", {
+  id: uuid("id").primaryKey(),
+  identifier: text("identifier").notNull(),
+  value: text("value").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  identifierIdx: index("idx_verifications_identifier").on(t.identifier),
+}));
 
 /**
  * Households Table
@@ -180,6 +238,8 @@ export type ExpenseSplit = typeof expenseSplits.$inferSelect;
 export type UserProfile = typeof userProfiles.$inferSelect;
 export type HouseholdJoinRequest = typeof householdJoinRequests.$inferSelect;
 export type MonthlyReport = typeof monthlyReports.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type Account = typeof accounts.$inferSelect;
 
 export type InsertUser = typeof users.$inferInsert;
 export type InsertHousehold = typeof households.$inferInsert;
