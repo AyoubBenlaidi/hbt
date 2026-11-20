@@ -15,6 +15,13 @@
       "when": 1776241594825,
       "tag": "0001_easy_mister_fear",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795209112624,
+      "tag": "0002_supabase_manual_tables",
+      "breakpoints": true
     }
   ]
 }

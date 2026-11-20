@@ -7,7 +7,10 @@ import {
   date, 
   numeric, 
   unique,
-  check
+  check,
+  boolean,
+  index,
+  uniqueIndex
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -34,7 +37,12 @@ export const households = pgTable("households", {
   createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+  joinCode: varchar("join_code", { length: 8 }).notNull(),
+  joinCodeEnabled: boolean("join_code_enabled").notNull().default(true),
+  joinCodeUpdatedAt: timestamp("join_code_updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  joinCodeIdx: uniqueIndex("idx_households_join_code").on(t.joinCode),
+}));
 
 /**
  * Household Members Table
@@ -110,6 +118,58 @@ export const expenseSplits = pgTable("expense_splits", {
   ),
 }));
 
+/**
+ * User Profiles Table
+ * Public profile (pseudo, avatar) of a user
+ */
+export const userProfiles = pgTable("user_profiles", {
+  id: uuid("id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  pseudo: varchar("pseudo", { length: 30 }).notNull(),
+  description: varchar("description", { length: 80 }),
+  avatarColor: varchar("avatar_color", { length: 7 }).notNull().default("#4A7C59"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  pseudoIdx: uniqueIndex("idx_user_profiles_pseudo").on(t.pseudo),
+}));
+
+/**
+ * Household Join Requests Table
+ * Requests to join a household with its join code
+ */
+export const householdJoinRequests = pgTable("household_join_requests", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+  requesterUserId: uuid("requester_user_id").notNull(),
+  codeUsed: varchar("code_used", { length: 8 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  reviewedByUserId: uuid("reviewed_by_user_id"),
+}, (t) => ({
+  statusCheck: check("household_join_requests_status_check",
+    sql`${t.status} IN ('pending', 'approved', 'rejected', 'cancelled')`
+  ),
+  onePendingIdx: uniqueIndex("idx_one_pending_per_user_household")
+    .on(t.householdId, t.requesterUserId)
+    .where(sql`status = 'pending'`),
+  householdIdx: index("idx_join_requests_household").on(t.householdId),
+  requesterIdx: index("idx_join_requests_requester").on(t.requesterUserId),
+}));
+
+/**
+ * Monthly Reports Table
+ * Sent monthly report emails (prevents duplicates on cron retries)
+ */
+export const monthlyReports = pgTable("monthly_reports", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  householdId: uuid("household_id").notNull().references(() => households.id, { onDelete: "cascade" }),
+  month: varchar("month", { length: 7 }).notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uniqueHouseholdMonth: unique("monthly_reports_household_id_month_key").on(t.householdId, t.month),
+}));
+
 // Type exports for use in application code
 export type User = typeof users.$inferSelect;
 export type Household = typeof households.$inferSelect;
@@ -117,6 +177,9 @@ export type HouseholdMember = typeof householdMembers.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type ExpensePayer = typeof expensePayers.$inferSelect;
 export type ExpenseSplit = typeof expenseSplits.$inferSelect;
+export type UserProfile = typeof userProfiles.$inferSelect;
+export type HouseholdJoinRequest = typeof householdJoinRequests.$inferSelect;
+export type MonthlyReport = typeof monthlyReports.$inferSelect;
 
 export type InsertUser = typeof users.$inferInsert;
 export type InsertHousehold = typeof households.$inferInsert;
