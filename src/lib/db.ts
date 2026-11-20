@@ -1,5 +1,6 @@
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { attachDatabasePool } from "@vercel/functions";
 import * as schema from "@/db/schema";
 
 /**
@@ -21,6 +22,8 @@ export function getDb(): Database {
     }
 
     const pool = new Pool({ connectionString, max: 5 });
+    // Vercel Fluid compute: keeps the instance alive until idle connections are released
+    attachDatabasePool(pool);
     globalForDb._hbtDb = drizzle(pool, { schema });
   }
 

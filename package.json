@@ -16,7 +16,10 @@
     "migration:compare": "tsx scripts/migration/compare-databases.ts"
   },
   "dependencies": {
+    "@neon/config": "^1.14.5",
+    "@neon/env": "^2.1.8",
     "@supabase/supabase-js": "^2.43.0",
+    "@vercel/functions": "^3.11.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "dotenv": "^17.4.1",

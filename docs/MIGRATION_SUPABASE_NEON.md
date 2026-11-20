@@ -13,9 +13,9 @@ On les retire **avant** de déplacer la base. Le code passe par Drizzle avec `DA
 
 ```
 Étape 0  Fondations : tests, schéma, outils          ✅ fait
-Étape 1  Inventaire du schéma réel de Supabase
+Étape 1  Inventaire du schéma réel de Supabase        ✅ fait
 Étape 2  Accès aux données côté serveur (Drizzle)     ← toujours sur la base Supabase
-Étape 3  Better Auth (code + tests)
+Étape 3  Authentification (code + tests)              ← choix Neon Auth / Better Auth à faire
 Étape 4  Bascule de l'authentification (prod)         ← toujours sur la base Supabase
 Étape 5  Bascule de la base vers Neon (prod)
 Étape 6  Nettoyage
@@ -39,9 +39,25 @@ Commandes : `npm test`, `npm run typecheck`.
 
 > ⚠️ La migration `0002` ne doit **jamais** être appliquée sur Supabase : ces objets y existent déjà. Les migrations Drizzle ne servent qu'à créer une base neuve (Neon, tests).
 
-## Étape 1 — Inventaire du schéma réel
+## Projet Neon
 
-Le schéma Drizzle a été reconstruit à partir du code et des scripts SQL. Il faut le confronter à la vraie base, qui a pu être modifiée depuis le tableau de bord Supabase.
+| | |
+|---|---|
+| Projet | `round-hat-77068788` (« Home budget tracker »), org `org-muddy-queen-99619406` |
+| Région | `aws-us-east-2`, Postgres 18 |
+| Branches | `production` (défaut, **vide** : réservée à l'import des vraies données) · `dev` (tests, expire au bout de 7 jours, recréable avec `neon checkout dev --create`) |
+| Services | Postgres + Neon Auth (Better Auth géré), déclarés dans `neon.ts` |
+| Driver | `pg` + `attachDatabasePool` (`@vercel/functions`), comme le recommande Neon pour Vercel |
+| Migrations | `npm run db:migrate` (utilise `DATABASE_URL_UNPOOLED`, la connexion directe) |
+| Santé | `GET /api/health/db` avec `Authorization: Bearer $CRON_SECRET` |
+
+Variables : `neon env pull` écrit `DATABASE_URL`, `DATABASE_URL_UNPOOLED` et `NEON_AUTH_*` dans `.env.local` pour la branche active (`neon checkout <branche>`).
+
+## Étape 1 — Inventaire du schéma réel ✅
+
+Résultat (20/11, lecture seule via l'API Supabase) : schéma **identique** à Neon après les migrations `0002` et `0003` (9 tables, 62 colonnes, mêmes types et nullabilité, aucune fonction RPC). Volumes : 4 utilisateurs (tous confirmés, tous avec leur ligne `users`), 1 foyer, 96 dépenses (dont 14 supprimées), 94 payeurs, 173 parts, 2 rapports mensuels.
+
+Méthode initiale prévue : le schéma Drizzle a été reconstruit à partir du code et des scripts SQL. Il faut le confronter à la vraie base, qui a pu être modifiée depuis le tableau de bord Supabase.
 
 - **Action (toi)** : récupérer la chaîne de connexion Postgres de Supabase (Project Settings → Database), puis lancer :
   `pg_dump "$SUPABASE_DB_URL" --schema=public --schema-only --no-owner --no-acl > supabase-schema.sql`
@@ -71,7 +87,20 @@ Ordre proposé, une PR par domaine :
 - **Prod** : `DATABASE_URL` est la chaîne de connexion **pooler** de Supabase. Aucun changement visible pour les utilisateurs.
 - **Retour arrière** : revert de la PR.
 
-## Étape 3 — Better Auth (code et tests)
+## Étape 3 — Authentification (code et tests)
+
+**Décision à prendre** :
+
+| | Neon Auth (géré, déjà activé) | Better Auth auto-hébergé |
+|---|---|---|
+| Mots de passe | **Non transférables** : chaque utilisateur fait « mot de passe oublié » une fois | Conservés (vérification bcrypt) |
+| Identifiants (UUID) | À conserver en insérant les comptes avec le même id (droit d'écriture sur `neon_auth` vérifié, à prouver sur `dev`) | Conservés |
+| Emails d'auth | Expéditeur Neon partagé (codes), SMTP personnalisé pour les liens | Mailer Gmail existant |
+| Code à maintenir | Faible (`@neon/auth`) | Moyen (routes d'auth dans l'app) |
+
+Testé sur la branche `dev` : inscription, connexion, refus d'un mauvais mot de passe, session, déconnexion.
+
+Si Better Auth auto-hébergé :
 
 - [Better Auth](https://www.better-auth.com) avec l'adaptateur Drizzle, sur la même base. Les tables `session`, `account` et `verification` sont ajoutées par une migration.
 - Les identifiants (UUID) des utilisateurs sont conservés : toutes les tables y font référence.

@@ -19,10 +19,10 @@ import { sql } from "drizzle-orm";
  * Represents an application user
  */
 export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
+  // Same id as the auth account: no default
+  id: uuid("id").primaryKey(),
   email: varchar("email", { length: 255 }).notNull().unique(),
   displayName: varchar("display_name", { length: 255 }).notNull(),
-  passwordHash: varchar("password_hash", { length: 255 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
