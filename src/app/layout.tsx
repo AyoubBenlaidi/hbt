@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/Toast";
+import { SupabaseSessionBridge } from "@/components/auth/SupabaseSessionBridge";
 import { animations } from "@/lib/animations";
 
 export const metadata: Metadata = {
@@ -39,6 +40,7 @@ export default function RootLayout({
         `}</style>
       </head>
       <body>
+        <SupabaseSessionBridge />
         <ToastProvider>
           <div className="min-h-screen">
             {children}

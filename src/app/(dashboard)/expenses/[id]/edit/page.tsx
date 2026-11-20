@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import { getExpense } from "@/server/actions/expenses";
 import { ExpenseForm } from "@/components/expenses/ExpenseForm";
 import { colors, spacing } from "@/lib/designSystem";
 
@@ -34,36 +35,8 @@ export default function EditExpensePage() {
 
     const fetchExpense = async () => {
       try {
-        const { data, error: err } = await supabase
-          .from("expenses")
-          .select(`
-            id,
-            description,
-            amount,
-            currency,
-            expense_date,
-            expense_kind,
-            notes,
-            created_by_user_id,
-            household_id,
-            expense_payers(
-              amount,
-              household_members(
-                id,
-                user_id
-              )
-            ),
-            expense_splits(
-              household_members(
-                id,
-                user_id
-              )
-            )
-          `)
-          .eq("id", expenseId)
-          .single();
+        const data = unwrap(await getExpense(expenseId));
 
-        if (err) throw err;
         if (!data) {
           setError("Expense not found");
           return;

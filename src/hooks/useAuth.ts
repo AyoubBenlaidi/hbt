@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { clearProfileCache } from "@/hooks/useUserProfile";
 
 export interface AuthUser {
   id: string;
@@ -18,9 +19,12 @@ export function useAuth() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>("");
 
-  const user: AuthUser | null = session
-    ? { id: session.user.id, email: session.user.email, name: session.user.name }
-    : null;
+  // Stable identity: pages use `user` as an effect dependency
+  const sessionUser = session?.user;
+  const user = useMemo<AuthUser | null>(
+    () => (sessionUser ? { id: sessionUser.id, email: sessionUser.email, name: sessionUser.name } : null),
+    [sessionUser?.id, sessionUser?.email, sessionUser?.name] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // Runs an auth call, exposing its pending state and error message
   const run = async (call: () => Promise<{ error: { message?: string } | null }>, fallback: string): Promise<Result> => {
@@ -52,6 +56,7 @@ export function useAuth() {
   const signOut = async () => {
     const result = await run(() => authClient.signOut(), "Failed to sign out");
     if (result.success) {
+      clearProfileCache();
       router.push("/login");
     }
     return result;

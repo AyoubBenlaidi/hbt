@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db";
 import { sendEmail } from "@/services/email/mailer";
 import { renderResetPasswordEmail } from "@/services/email/resetPasswordEmail";
+import { supabaseSessionBridge, supabaseUserResolver, type ResolveSupabaseUser } from "@/lib/supabaseBridge";
 
 /**
  * Authentication (Better Auth, self-hosted in this app)
@@ -26,6 +27,8 @@ export interface CreateAuthOptions {
   baseURL?: string;
   secret?: string;
   trustedOrigins?: string[];
+  /** Enables the Supabase session bridge (migration period) */
+  resolveSupabaseUser?: ResolveSupabaseUser;
   // Next.js only (needs a request scope): see getAuth
   plugins?: ReturnType<typeof nextCookies>[];
 }
@@ -39,7 +42,15 @@ export async function verifyPassword({ hash, password }: { hash: string; passwor
   return isBcryptHash(hash) ? bcrypt.compare(password, hash) : verifyScrypt({ hash, password });
 }
 
-export function createAuth({ db, sendEmail, baseURL, secret, trustedOrigins, plugins = [] }: CreateAuthOptions) {
+export function createAuth({
+  db,
+  sendEmail,
+  baseURL,
+  secret,
+  trustedOrigins,
+  resolveSupabaseUser,
+  plugins = [],
+}: CreateAuthOptions) {
   return betterAuth({
     appName: "Home Budget Tracker",
     baseURL,
@@ -62,7 +73,7 @@ export function createAuth({ db, sendEmail, baseURL, secret, trustedOrigins, plu
     advanced: {
       database: { generateId: () => randomUUID() },
     },
-    plugins,
+    plugins: [...(resolveSupabaseUser ? [supabaseSessionBridge(resolveSupabaseUser)] : []), ...plugins],
   });
 }
 
@@ -74,12 +85,16 @@ let _auth: Auth | null = null;
 export function getAuth(): Auth {
   if (!_auth) {
     const vercelUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     _auth = createAuth({
       db: getDb(),
       sendEmail,
       baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || vercelUrl,
       secret: process.env.BETTER_AUTH_SECRET,
       trustedOrigins: vercelUrl ? [vercelUrl] : [],
+      resolveSupabaseUser:
+        supabaseUrl && supabaseKey ? supabaseUserResolver({ url: supabaseUrl, apiKey: supabaseKey }) : undefined,
       // Lets server actions set auth cookies; must stay the last plugin
       plugins: [nextCookies()],
     });

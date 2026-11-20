@@ -60,31 +60,30 @@ export async function importSupabaseAuthUsers(db: Db, authUsers: SupabaseAuthUse
       continue;
     }
 
-    await db.transaction(async (tx) => {
-      // Better Auth finds the user by users.email: it must be the sign-in email
-      const email = authUser.email.toLowerCase();
-      if (appUser.email !== email) {
-        report.emailUpdated.push(authUser.id);
-      }
-      await tx
-        .update(schema.users)
-        .set({ email, emailVerified: authUser.email_confirmed_at !== null })
-        .where(eq(schema.users.id, authUser.id));
+    // No transaction (the Neon HTTP driver has none): both writes are idempotent
+    // Better Auth finds the user by users.email: it must be the sign-in email
+    const email = authUser.email.toLowerCase();
+    if (appUser.email !== email) {
+      report.emailUpdated.push(authUser.id);
+    }
+    await db
+      .update(schema.users)
+      .set({ email, emailVerified: authUser.email_confirmed_at !== null })
+      .where(eq(schema.users.id, authUser.id));
 
-      const inserted = await tx
-        .insert(schema.accounts)
-        .values({
-          id: randomUUID(),
-          userId: authUser.id,
-          accountId: authUser.id,
-          providerId: "credential",
-          password: hash,
-        })
-        .onConflictDoNothing({ target: [schema.accounts.providerId, schema.accounts.accountId] })
-        .returning({ id: schema.accounts.id });
+    const inserted = await db
+      .insert(schema.accounts)
+      .values({
+        id: randomUUID(),
+        userId: authUser.id,
+        accountId: authUser.id,
+        providerId: "credential",
+        password: hash,
+      })
+      .onConflictDoNothing({ target: [schema.accounts.providerId, schema.accounts.accountId] })
+      .returning({ id: schema.accounts.id });
 
-      (inserted.length > 0 ? report.imported : report.alreadyImported).push(authUser.id);
-    });
+    (inserted.length > 0 ? report.imported : report.alreadyImported).push(authUser.id);
   }
 
   return report;

@@ -4,7 +4,8 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useTranslations } from "@/hooks/useI18n";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import { getExpense } from "@/server/actions/expenses";
 import { ExpenseForm } from "@/components/expenses/ExpenseForm";
 import { colors, spacing } from "@/lib/designSystem";
 
@@ -35,38 +36,8 @@ export default function NewExpenseContent() {
 
     const fetchTemplate = async () => {
       try {
-        const { data, error: err } = await supabase
-          .from("expenses")
-          .select(`
-            id,
-            description,
-            amount,
-            currency,
-            expense_date,
-            expense_kind,
-            notes,
-            created_by_user_id,
-            household_id,
-            expense_payers(
-              household_members(
-                id,
-                user_id,
-                status
-              )
-            ),
-            expense_splits(
-              household_members(
-                id,
-                user_id,
-                status
-              )
-            )
-          `)
-          .eq("id", duplicateFrom)
-          .eq("household_id", householdId)
-          .single();
-
-        if (err) throw err;
+        const data = unwrap(await getExpense(duplicateFrom));
+        if (!data || data.household_id !== householdId) throw new Error("Expense not found");
 
         // Members who left the household can't be selected anymore
         const isActive = (row: any) => row.household_members?.status === "active";

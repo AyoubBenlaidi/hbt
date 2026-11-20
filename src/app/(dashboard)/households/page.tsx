@@ -4,10 +4,17 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import {
+  cancelJoinRequest,
+  createHousehold,
+  listMyHouseholds,
+  listMyPendingJoinRequests,
+  requestToJoin,
+} from "@/server/actions/households";
 import { PremiumCard } from "@/components/ui/PremiumComponents";
 import { colors, spacing } from "@/lib/designSystem";
-import { normalizeCode, generateJoinCode } from "@/lib/joinCode";
+import { normalizeCode } from "@/lib/joinCode";
 import { useTranslations } from "@/hooks/useI18n";
 
 interface Household {
@@ -58,107 +65,12 @@ export default function HouseholdsPage() {
       try {
         setHouseholdsLoading(true);
 
-        // Get all household_members for this user
-        const { data: memberData, error: memberErr } = await supabase
-          .from("household_members")
-          .select("id, household_id")
-          .eq("user_id", user.id);
-
-        if (memberErr) throw memberErr;
-
-        const householdIds = memberData?.map((m) => m.household_id) || [];
-
-        if (householdIds.length === 0) {
-          setHouseholds([]);
-        } else {
-          // Get all households with those IDs
-          const { data, error: err } = await supabase
-            .from("households")
-            .select("id, name, created_by_user_id")
-            .in("id", householdIds);
-
-          if (err) throw err;
-
-          // Calculate balances for each household
-          const householdsWithBalance = await Promise.all(
-            (data || []).map(async (household) => {
-              const userMember = memberData?.find(
-                (m) => m.household_id === household.id
-              );
-
-              if (!userMember) {
-                return { ...household, totalPaid: 0, totalOwed: 0, balance: 0 };
-              }
-
-              const { data: expenses, error: expensesError } = await supabase
-                .from("expenses")
-                .select("id, household_id, deleted_at")
-                .eq("household_id", household.id)
-                .is("deleted_at", null);
-
-              if (expensesError) throw expensesError;
-
-              const expenseIds = (expenses || []).map((e) => e.id);
-
-              let totalPaid = 0;
-              let totalOwed = 0;
-
-              if (expenseIds.length > 0) {
-                const { data: payerData, error: payerError } = await supabase
-                  .from("expense_payers")
-                  .select("amount")
-                  .eq("member_id", userMember.id)
-                  .in("expense_id", expenseIds);
-
-                if (payerError) throw payerError;
-                totalPaid = (payerData || []).reduce(
-                  (sum, p) => sum + parseFloat(p.amount as any),
-                  0
-                );
-
-                const { data: splitData, error: splitError } = await supabase
-                  .from("expense_splits")
-                  .select("amount")
-                  .eq("member_id", userMember.id)
-                  .in("expense_id", expenseIds);
-
-                if (splitError) throw splitError;
-                totalOwed = (splitData || []).reduce(
-                  (sum, s) => sum + parseFloat(s.amount as any),
-                  0
-                );
-              }
-
-              return { ...household, totalPaid, totalOwed, balance: totalPaid - totalOwed };
-            })
-          );
-
-          setHouseholds(householdsWithBalance);
-        }
-
-        // Fetch user's pending join requests
-        const { data: requests } = await supabase
-          .from("household_join_requests")
-          .select("id, household_id, status, created_at")
-          .eq("requester_user_id", user.id)
-          .eq("status", "pending");
-
-        if (requests && requests.length > 0) {
-          // Fetch household names for pending requests
-          const reqHouseholdIds = requests.map((r) => r.household_id);
-          const { data: reqHouseholds } = await supabase
-            .from("households")
-            .select("id, name")
-            .in("id", reqHouseholdIds);
-
-          const enriched = requests.map((r) => ({
-            ...r,
-            household_name: reqHouseholds?.find((h) => h.id === r.household_id)?.name || "Unknown",
-          }));
-          setPendingRequests(enriched);
-        } else {
-          setPendingRequests([]);
-        }
+        const [myHouseholds, requests] = await Promise.all([
+          listMyHouseholds().then(unwrap),
+          listMyPendingJoinRequests().then(unwrap),
+        ]);
+        setHouseholds(myHouseholds);
+        setPendingRequests(requests);
       } catch (err) {
         console.error("Error fetching households:", err);
         addToast("Failed to load households", "error", 2000);
@@ -185,31 +97,7 @@ export default function HouseholdsPage() {
 
     setLoading(true);
     try {
-      const newCode = generateJoinCode();
-
-      const { data: householdData, error: householdError } = await supabase
-        .from("households")
-        .insert({
-          name: householdName,
-          created_by_user_id: user.id,
-          join_code: newCode,
-          join_code_enabled: true,
-        })
-        .select()
-        .single();
-
-      if (householdError) throw householdError;
-
-      const { error: memberError } = await supabase
-        .from("household_members")
-        .insert({
-          household_id: householdData.id,
-          user_id: user.id,
-          role: "owner",
-          status: "active",
-        });
-
-      if (memberError) throw memberError;
+      const householdData = unwrap(await createHousehold(householdName));
 
       setHouseholds([...households, householdData]);
       setHouseholdName("");
@@ -233,76 +121,28 @@ export default function HouseholdsPage() {
 
     setIsJoining(true);
     try {
-      // 1. Find household by code
-      const { data: household, error: hErr } = await supabase
-        .from("households")
-        .select("id, name, join_code_enabled")
-        .eq("join_code", normalized)
-        .single();
+      const result = unwrap(await requestToJoin(normalized));
 
-      if (hErr || !household) {
+      if (result.status === "invalid") {
         addToast("This code is invalid or no longer active", "error", 3000);
         return;
       }
-
-      if (!household.join_code_enabled) {
+      if (result.status === "paused") {
         addToast("This code is currently paused by the household owner", "error", 3000);
         return;
       }
-
-      // 2. Check if already a member
-      const { data: existingMember } = await supabase
-        .from("household_members")
-        .select("id")
-        .eq("household_id", household.id)
-        .eq("user_id", user.id)
-        .single();
-
-      if (existingMember) {
+      if (result.status === "already_member") {
         addToast("You are already a member of this household", "info", 3000);
         return;
       }
-
-      // 3. Check if pending request already exists
-      const { data: existingRequest } = await supabase
-        .from("household_join_requests")
-        .select("id")
-        .eq("household_id", household.id)
-        .eq("requester_user_id", user.id)
-        .eq("status", "pending")
-        .single();
-
-      if (existingRequest) {
+      if (result.status === "already_pending") {
         addToast("Your request is already pending approval", "info", 3000);
         return;
       }
 
-      // 4. Create join request
-      const { error: insertErr } = await supabase
-        .from("household_join_requests")
-        .insert({
-          household_id: household.id,
-          requester_user_id: user.id,
-          code_used: normalized,
-          status: "pending",
-        });
-
-      if (insertErr) throw insertErr;
-
       setJoinCode("");
-      addToast(`Request sent to "${household.name}" — waiting for owner approval`, "success", 4000);
-
-      // Refresh pending requests
-      setPendingRequests((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          household_id: household.id,
-          status: "pending",
-          created_at: new Date().toISOString(),
-          household_name: household.name,
-        },
-      ]);
+      addToast(`Request sent to "${result.request.household_name}" — waiting for owner approval`, "success", 4000);
+      setPendingRequests((prev) => [...prev, result.request]);
     } catch (err) {
       console.error("Error joining by code:", err);
       addToast("Failed to send join request", "error", 2000);
@@ -313,12 +153,7 @@ export default function HouseholdsPage() {
 
   const handleCancelRequest = async (requestId: string) => {
     try {
-      const { error } = await supabase
-        .from("household_join_requests")
-        .update({ status: "cancelled" })
-        .eq("id", requestId);
-
-      if (error) throw error;
+      unwrap(await cancelJoinRequest(requestId));
 
       setPendingRequests((prev) => prev.filter((r) => r.id !== requestId));
       addToast("Request cancelled", "success", 2000);

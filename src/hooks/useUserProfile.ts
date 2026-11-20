@@ -1,82 +1,67 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserProfile, getRandomAvatarColor } from "@/types/profile";
-import { supabase } from "@/lib/supabase/client";
+import { UserProfile } from "@/types/profile";
+import { unwrap } from "@/lib/actionResult";
+import { getProfile, updateMyProfile } from "@/server/actions/profiles";
+import type { ProfileRow } from "@/server/data/profiles";
+
+// One request per user for the whole page: avatars repeat on every expense row
+const cache = new Map<string, Promise<UserProfile | null>>();
+
+function loadProfile(userId: string): Promise<UserProfile | null> {
+  let pending = cache.get(userId);
+  if (!pending) {
+    pending = getProfile(userId)
+      .then(unwrap)
+      .then((row) => (row ? mapProfile(row) : null));
+    // Do not keep failures: a later render retries
+    pending.catch(() => cache.delete(userId));
+    cache.set(userId, pending);
+  }
+  return pending;
+}
+
+/** On sign-out: the next user must not see cached profiles */
+export function clearProfileCache() {
+  cache.clear();
+}
 
 export function useUserProfile(userId: string | undefined) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchProfile = async () => {
+  useEffect(() => {
     if (!userId) {
       setLoading(false);
       return;
     }
 
-    try {
-      setLoading(true);
-      setError(null);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    loadProfile(userId)
+      .then((loaded) => !cancelled && setProfile(loaded))
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to fetch profile");
+        setProfile(null);
+      })
+      .finally(() => !cancelled && setLoading(false));
 
-      const { data, error: fetchError } = await supabase
-        .from("user_profiles")
-        .select("*")
-        .eq("id", userId)
-        .single();
-
-      if (fetchError) {
-        if (fetchError.code === "PGRST116") {
-          // Not found - create default profile
-          const generatedColor = getRandomAvatarColor();
-          const pseudo = `User${userId.slice(0, 8).toUpperCase()}`;
-
-          const { data: newProfile, error: createError } = await supabase
-            .from("user_profiles")
-            .insert({
-              id: userId,
-              pseudo,
-              avatar_color: generatedColor,
-            })
-            .select()
-            .single();
-
-          if (createError) throw createError;
-          setProfile(mapProfile(newProfile));
-        } else {
-          throw fetchError;
-        }
-      } else {
-        setProfile(mapProfile(data));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch profile");
-      setProfile(null);
-    } finally {
-      setLoading(false);
-    }
-  };
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const updateProfile = async (updates: { pseudo: string; description: string; avatarColor: string }): Promise<UserProfile> => {
     if (!userId) throw new Error("User ID required");
 
     try {
       setError(null);
-
-      const { data, error: updateError } = await supabase
-        .from("user_profiles")
-        .update({
-          pseudo: updates.pseudo,
-          description: updates.description || null,
-          avatar_color: updates.avatarColor,
-        })
-        .eq("id", userId)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-
-      const updatedProfile = mapProfile(data);
+      const updatedProfile = mapProfile(unwrap(await updateMyProfile(updates)));
+      cache.set(userId, Promise.resolve(updatedProfile));
       setProfile(updatedProfile);
       return updatedProfile;
     } catch (err) {
@@ -86,20 +71,16 @@ export function useUserProfile(userId: string | undefined) {
     }
   };
 
-  useEffect(() => {
-    fetchProfile();
-  }, [userId]);
-
   return { profile, loading, error, updateProfile };
 }
 
-function mapProfile(data: any): UserProfile {
+function mapProfile(data: ProfileRow): UserProfile {
   return {
     id: data.id,
     pseudo: data.pseudo,
     description: data.description,
     avatarColor: data.avatar_color,
-    createdAt: data.created_at,
-    updatedAt: data.updated_at,
+    createdAt: data.created_at ?? "",
+    updatedAt: data.updated_at ?? "",
   };
 }
