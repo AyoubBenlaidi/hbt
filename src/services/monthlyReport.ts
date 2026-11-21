@@ -1,4 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
+import * as schema from "@/db/schema";
+import type { Db } from "@/server/data/common";
 import { computeBalances, computeSettlements, toCents, type Settlement } from "@/services/balance";
 
 /**
@@ -45,7 +47,7 @@ export interface MonthlyReport {
   settlements: Settlement[];
 }
 
-const PAGE_SIZE = 1000;
+const { expenses, expensePayers, expenseSplits, householdMembers, users } = schema;
 
 /**
  * Previous calendar month relative to `now`, in Europe/Paris time
@@ -82,78 +84,70 @@ export function getMonth(year: number, month: number): ReportMonth {
   };
 }
 
-async function fetchAllExpenses(supabase: SupabaseClient, householdId: string, end: string) {
-  const rows: any[] = [];
+async function fetchAllExpenses(db: Db, householdId: string, end: string) {
+  const rows = await db
+    .select({
+      id: expenses.id,
+      description: expenses.description,
+      amount: expenses.amount,
+      currency: expenses.currency,
+      expense_date: expenses.expenseDate,
+    })
+    .from(expenses)
+    .where(and(eq(expenses.householdId, householdId), isNull(expenses.deletedAt), lte(expenses.expenseDate, end)))
+    .orderBy(asc(expenses.expenseDate), asc(expenses.id));
 
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("expenses")
-      .select(
-        `
-        id,
-        description,
-        amount,
-        currency,
-        expense_date,
-        expense_payers ( member_id, amount ),
-        expense_splits ( member_id, amount )
-      `
-      )
-      .eq("household_id", householdId)
-      .is("deleted_at", null)
-      .lte("expense_date", end)
-      .order("expense_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+  const ids = rows.map((e) => e.id);
+  const shares = async (table: typeof expensePayers | typeof expenseSplits) =>
+    ids.length === 0
+      ? []
+      : db
+          .select({ expenseId: table.expenseId, member_id: table.memberId, amount: table.amount })
+          .from(table)
+          .where(inArray(table.expenseId, ids));
+  const [payers, splits] = await Promise.all([shares(expensePayers), shares(expenseSplits)]);
 
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < PAGE_SIZE) return rows;
-  }
+  return rows.map((e) => ({
+    ...e,
+    expense_payers: payers.filter((p) => p.expenseId === e.id),
+    expense_splits: splits.filter((s) => s.expenseId === e.id),
+  }));
 }
 
 export async function buildMonthlyReport(
-  supabase: SupabaseClient,
+  db: Db,
   household: { id: string; name: string },
   month: ReportMonth
 ): Promise<MonthlyReport> {
-  const { data: membersData, error: membersError } = await supabase
-    .from("household_members")
-    .select(
-      `
-      id,
-      user_id,
-      status,
-      users (
-        email,
-        display_name
-      )
-    `
-    )
-    .eq("household_id", household.id);
+  const membersData = await db
+    .select({
+      id: householdMembers.id,
+      user_id: householdMembers.userId,
+      status: householdMembers.status,
+      email: users.email,
+      display_name: users.displayName,
+    })
+    .from(householdMembers)
+    .innerJoin(users, eq(users.id, householdMembers.userId))
+    .where(eq(householdMembers.householdId, household.id));
 
-  if (membersError) throw membersError;
-
-  const expenses = await fetchAllExpenses(supabase, household.id, month.end);
+  const expenses = await fetchAllExpenses(db, household.id, month.end);
 
   const balances = computeBalances(
     expenses.map((e) => ({
-      payers: (e.expense_payers || []).map((p: any) => ({ memberId: p.member_id, amount: p.amount })),
-      splits: (e.expense_splits || []).map((s: any) => ({ memberId: s.member_id, amount: s.amount })),
+      payers: e.expense_payers.map((p) => ({ memberId: p.member_id, amount: p.amount })),
+      splits: e.expense_splits.map((s) => ({ memberId: s.member_id, amount: s.amount })),
     }))
   );
 
-  const members: ReportMember[] = (membersData || []).map((m: any) => {
-    const user = Array.isArray(m.users) ? m.users[0] : m.users;
-    return {
-      memberId: m.id,
-      userId: m.user_id,
-      name: user?.display_name || user?.email || "Membre",
-      email: user?.email ?? null,
-      status: m.status,
-      balanceCents: balances.get(m.id) ?? 0,
-    };
-  });
+  const members: ReportMember[] = membersData.map((m) => ({
+    memberId: m.id,
+    userId: m.user_id,
+    name: m.display_name || m.email || "Membre",
+    email: m.email ?? null,
+    status: m.status,
+    balanceCents: balances.get(m.id) ?? 0,
+  }));
   const nameOf = (memberId: string) =>
     members.find((m) => m.memberId === memberId)?.name ?? "Membre";
 
@@ -164,7 +158,7 @@ export async function buildMonthlyReport(
       description: e.description,
       amountCents: toCents(e.amount),
       paidBy:
-        (e.expense_payers || []).map((p: any) => nameOf(p.member_id)).join(", ") || "—",
+        e.expense_payers.map((p) => nameOf(p.member_id)).join(", ") || "—",
     }));
 
   return {

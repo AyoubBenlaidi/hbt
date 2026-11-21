@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { and, eq } from "drizzle-orm";
+import * as schema from "@/db/schema";
+import { getDb } from "@/lib/db";
+import { isUuid } from "@/server/data/common";
 import { buildMonthlyReport, getMonth, getPreviousMonth, type ReportMonth } from "@/services/monthlyReport";
 import { renderMonthlyReportEmail } from "@/services/email/monthlyReportEmail";
 import { sendEmail } from "@/services/email/mailer";
@@ -17,6 +20,9 @@ import { sendEmail } from "@/services/email/mailer";
  */
 
 export const dynamic = "force-dynamic";
+
+// Matches no household: an invalid householdId selects nothing
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 export const maxDuration = 60;
 
 function parseMonth(value: string | null): ReportMonth | null {
@@ -36,24 +42,24 @@ export async function GET(request: NextRequest) {
   const dryRun = params.get("dryRun") === "1";
   const preview = params.get("preview") === "1";
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const db = getDb();
+  const { households: householdsTable, monthlyReports } = schema;
 
-  let householdsQuery = supabase.from("households").select("id, name");
-  if (householdId) householdsQuery = householdsQuery.eq("id", householdId);
-  const { data: households, error: householdsError } = await householdsQuery;
-
-  if (householdsError) {
-    return NextResponse.json({ error: householdsError.message }, { status: 500 });
+  let households: { id: string; name: string }[];
+  try {
+    households = await db
+      .select({ id: householdsTable.id, name: householdsTable.name })
+      .from(householdsTable)
+      .where(householdId ? eq(householdsTable.id, isUuid(householdId) ? householdId : NIL_UUID) : undefined);
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 
   const results: Record<string, unknown>[] = [];
 
   for (const household of households || []) {
     try {
-      const report = await buildMonthlyReport(supabase, household, month);
+      const report = await buildMonthlyReport(db, household, month);
       const recipients = report.members.filter((m) => m.status === "active" && m.email);
 
       if (preview) {
@@ -81,16 +87,15 @@ export async function GET(request: NextRequest) {
       }
 
       // Claim the (household, month) pair so a retried cron never sends twice
-      const { error: claimError } = await supabase
-        .from("monthly_reports")
-        .insert({ household_id: household.id, month: month.key });
+      const claimed = await db
+        .insert(monthlyReports)
+        .values({ householdId: household.id, month: month.key })
+        .onConflictDoNothing()
+        .returning({ id: monthlyReports.id });
 
-      if (claimError) {
-        if (claimError.code === "23505") {
-          results.push({ householdId: household.id, status: "already-sent" });
-          continue;
-        }
-        throw claimError;
+      if (claimed.length === 0) {
+        results.push({ householdId: household.id, status: "already-sent" });
+        continue;
       }
 
       const failures: { email: string; error: string }[] = [];
@@ -108,11 +113,9 @@ export async function GET(request: NextRequest) {
 
       // Nobody received it: release the claim so a manual re-run can retry
       if (failures.length === recipients.length) {
-        await supabase
-          .from("monthly_reports")
-          .delete()
-          .eq("household_id", household.id)
-          .eq("month", month.key);
+        await db
+          .delete(monthlyReports)
+          .where(and(eq(monthlyReports.householdId, household.id), eq(monthlyReports.month, month.key)));
       }
 
       results.push({

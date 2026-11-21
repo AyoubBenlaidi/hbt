@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
-import { supabase } from "@/lib/supabase/client";
-import { createExpenseAction } from "@/actions/expenses/create";
+import { unwrap } from "@/lib/actionResult";
+import { createExpense, listActiveMembers, updateExpense } from "@/server/actions/expenses";
 import { PremiumCard, ActionButton } from "@/components/ui/PremiumComponents";
 import { colors, spacing } from "@/lib/designSystem";
 import { useTranslations } from "@/hooks/useI18n";
@@ -75,14 +75,7 @@ export function ExpenseForm({ householdId, expenseId, initialExpense, isDuplicat
   useEffect(() => {
     const fetchMembers = async () => {
       try {
-        const { data, error: err } = await supabase
-          .from("household_members")
-          .select("id, user_id, household_id, role, status, users(display_name, email)")
-          .eq("household_id", householdId)
-          .eq("status", "active");
-
-        if (err) throw err;
-        setHouseholdMembers(data || []);
+        setHouseholdMembers(unwrap(await listActiveMembers(householdId)));
       } catch (err) {
         console.error("Error fetching members:", err);
       }
@@ -148,81 +141,31 @@ export function ExpenseForm({ householdId, expenseId, initialExpense, isDuplicat
 
       if (isEditMode && expenseId) {
         // Update mode
-        const { error: updateErr } = await supabase
-          .from("expenses")
-          .update({
+        unwrap(
+          await updateExpense(expenseId, {
             description: formData.description,
             amount: formData.amount,
             currency: formData.currency,
-            expense_date: formData.expense_date,
+            expenseDate: formData.expense_date,
             notes: formData.notes,
-            updated_at: new Date().toISOString(),
+            payerMemberIds: formData.payers,
+            splitMemberIds: formData.splits,
           })
-          .eq("id", expenseId);
-
-        if (updateErr) throw updateErr;
-
-        // Delete old payers
-        const { error: deletePayersErr } = await supabase
-          .from("expense_payers")
-          .delete()
-          .eq("expense_id", expenseId);
-
-        if (deletePayersErr) throw deletePayersErr;
-
-        // Insert new payers
-        if (formData.payers.length > 0) {
-          const payersToInsert = formData.payers.map((payerId: string) => ({
-            expense_id: expenseId,
-            member_id: payerId,
-            amount: parseFloat(formData.amount || "0") / formData.payers.length,
-          }));
-
-          const { error: insertPayersErr } = await supabase
-            .from("expense_payers")
-            .insert(payersToInsert);
-
-          if (insertPayersErr) throw insertPayersErr;
-        }
-
-        // Delete old splits
-        const { error: deleteSplitsErr } = await supabase
-          .from("expense_splits")
-          .delete()
-          .eq("expense_id", expenseId);
-
-        if (deleteSplitsErr) throw deleteSplitsErr;
-
-        // Insert new splits
-        if (formData.splits.length > 0) {
-          const splitsToInsert = formData.splits.map((memberId: string) => ({
-            expense_id: expenseId,
-            member_id: memberId,
-            amount: parseFloat(formData.amount || "0") / formData.splits.length,
-          }));
-
-          const { error: insertSplitsErr } = await supabase
-            .from("expense_splits")
-            .insert(splitsToInsert);
-
-          if (insertSplitsErr) throw insertSplitsErr;
-        }
+        );
 
         addToast("Expense updated successfully!", "success", 2000);
       } else {
         // Create mode
-        const result = await createExpenseAction(
-          householdId,
-          user!.id,
-          formData.description,
-          formData.amount,
-          formData.expense_date,
-          formData.payers,
-          formData.splits,
-          formData.notes || undefined
-        );
+        const result = await createExpense(householdId, {
+          description: formData.description,
+          amount: formData.amount,
+          expenseDate: formData.expense_date,
+          payerMemberIds: formData.payers,
+          splitMemberIds: formData.splits,
+          notes: formData.notes || undefined,
+        });
 
-        if (!result.success) {
+        if (!result.ok) {
           addToast(result.error || "Failed to create expense", "error", 3000);
           setIsSubmitting(false);
           return;

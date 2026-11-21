@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import { getDashboard } from "@/server/actions/dashboard";
 import { PremiumCard, ActionButton } from "@/components/ui/PremiumComponents";
 import { colors, spacing } from "@/lib/designSystem";
 import { CalendarIcon, ClockIcon, InfinityIcon } from "@/components/icons/NavigationIcons";
@@ -257,155 +258,7 @@ export default function DashboardPage() {
         setLoading(true);
         setError("");
 
-        // Get user's household memberships
-        const { data: memberData, error: memberError } = await supabase
-          .from("household_members")
-          .select("id, household_id")
-          .eq("user_id", user.id)
-          .eq("status", "active");
-
-        if (memberError) throw memberError;
-
-        const householdIds = memberData?.map((m) => m.household_id) || [];
-
-        if (householdIds.length === 0) {
-          setHouseholdTransactions([]);
-          setLoading(false);
-          return;
-        }
-
-        // Get households
-        const { data: householdData, error: householdError } = await supabase
-          .from("households")
-          .select("id, name")
-          .in("id", householdIds);
-
-        if (householdError) throw householdError;
-
-        // Get transactions for each household
-        const allTransactions: HouseholdTransactions[] = [];
-
-        for (const household of householdData || []) {
-          const userMember = memberData?.find((m) => m.household_id === household.id);
-
-          if (!userMember) continue;
-
-          // Get payer transactions
-          const { data: payerExpenses, error: payerError } = await supabase
-            .from("expense_payers")
-            .select(
-              `
-              id,
-              amount,
-              expenses (
-                id,
-                description,
-                expense_date,
-                expense_kind,
-                amount,
-                deleted_at,
-                household_id
-              )
-            `
-            )
-            .eq("member_id", userMember.id);
-
-          if (payerError) throw payerError;
-
-          // Get split transactions (my splits only)
-          const { data: splitExpenses, error: splitError } = await supabase
-            .from("expense_splits")
-            .select(
-              `
-              id,
-              amount,
-              expenses (
-                id,
-                description,
-                expense_date,
-                expense_kind,
-                amount,
-                deleted_at,
-                household_id
-              )
-            `
-            )
-            .eq("member_id", userMember.id);
-
-          if (splitError) throw splitError;
-
-          // Get ALL splits for this household (for total spent calculation)
-          const { data: allHouseholdSplits, error: allSplitsError } = await supabase
-            .from("expense_splits")
-            .select("amount, expenses(household_id, deleted_at)")
-            .eq("expenses.household_id", household.id);
-
-          if (allSplitsError) throw allSplitsError;
-
-          // Calculate total spent from all splits
-          const totalSpentAllTime = (allHouseholdSplits || []).reduce((sum, split: any) => {
-            if (split.expenses && !split.expenses.deleted_at) {
-              return sum + parseFloat(split.amount);
-            }
-            return sum;
-          }, 0);
-
-          const transactions: Transaction[] = [];
-
-          // Add payer transactions
-          (payerExpenses || []).forEach((payer: any) => {
-            if (
-              payer.expenses &&
-              payer.expenses.household_id === household.id &&
-              !payer.expenses.deleted_at
-            ) {
-              transactions.push({
-                id: payer.id,
-                expenseId: payer.expenses.id,
-                expenseAmount: parseFloat(payer.expenses.amount),
-                type: "paid",
-                description: payer.expenses.description,
-                amount: parseFloat(payer.amount),
-                date: payer.expenses.expense_date,
-                expenseKind: payer.expenses.expense_kind,
-              });
-            }
-          });
-
-          // Add split transactions
-          (splitExpenses || []).forEach((split: any) => {
-            if (
-              split.expenses &&
-              split.expenses.household_id === household.id &&
-              !split.expenses.deleted_at
-            ) {
-              transactions.push({
-                id: split.id,
-                expenseId: split.expenses.id,
-                expenseAmount: parseFloat(split.expenses.amount),
-                type: "owed",
-                description: split.expenses.description,
-                amount: parseFloat(split.amount),
-                date: split.expenses.expense_date,
-                expenseKind: split.expenses.expense_kind,
-              });
-            }
-          });
-
-          // Sort by date descending
-          transactions.sort(
-            (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-          );
-
-          allTransactions.push({
-            householdId: household.id,
-            householdName: household.name,
-            transactions,
-            totalSpentAllTime,
-          });
-        }
-
-        setHouseholdTransactions(allTransactions);
+        setHouseholdTransactions(unwrap(await getDashboard()));
       } catch (err) {
         console.error("Error fetching data:", err);
         setError("Failed to load dashboard data");

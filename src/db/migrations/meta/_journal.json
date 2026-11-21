@@ -15,6 +15,27 @@
       "when": 1776241594825,
       "tag": "0001_easy_mister_fear",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795209112624,
+      "tag": "0002_supabase_manual_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795210118315,
+      "tag": "0003_users_match_supabase",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795210678887,
+      "tag": "0004_better_auth",
+      "breakpoints": true
     }
   ]
 }

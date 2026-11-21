@@ -1,189 +1,81 @@
-import { useEffect, useState } from "react";
+"use client";
+
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import { authClient } from "@/lib/auth-client";
+import { clearProfileCache } from "@/hooks/useUserProfile";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+type Result = { success: true } | { success: false; error: string };
 
 export function useAuth() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: session, isPending } = authClient.useSession();
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string>("");
 
-  useEffect(() => {
-    // Check if user is already logged in
-    const checkUser = async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
-      } catch (err) {
-        console.error("Error checking auth:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Stable identity: pages use `user` as an effect dependency
+  const sessionUser = session?.user;
+  const user = useMemo<AuthUser | null>(
+    () => (sessionUser ? { id: sessionUser.id, email: sessionUser.email, name: sessionUser.name } : null),
+    [sessionUser?.id, sessionUser?.email, sessionUser?.name] // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
-    checkUser();
-
-    // Subscribe to auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
-  }, []);
-
-  const signUp = async (email: string, password: string, displayName: string) => {
+  // Runs an auth call, exposing its pending state and error message
+  const run = async (call: () => Promise<{ error: { message?: string } | null }>, fallback: string): Promise<Result> => {
     setError("");
-    setLoading(true);
+    setPending(true);
     try {
-      // Sign up with Supabase
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            display_name: displayName,
-          },
-        },
-      });
-
+      const { error: authError } = await call();
       if (authError) {
-        setError(authError.message);
-        return { success: false, error: authError.message };
+        const message = authError.message || fallback;
+        setError(message);
+        return { success: false, error: message };
       }
-
-      if (!authData.user) {
-        setError("Failed to create user");
-        return { success: false, error: "Failed to create user" };
-      }
-
-      // Insert user profile
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        email: authData.user.email,
-        display_name: displayName,
-      });
-
-      if (profileError) {
-        setError(profileError.message);
-        return { success: false, error: profileError.message };
-      }
-
-      setUser(authData.user);
       return { success: true };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to sign up";
+      const message = err instanceof Error ? err.message : fallback;
       setError(message);
       return { success: false, error: message };
     } finally {
-      setLoading(false);
+      setPending(false);
     }
   };
 
-  const signIn = async (email: string, password: string) => {
-    setError("");
-    setLoading(true);
-    try {
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  const signUp = (email: string, password: string, displayName: string) =>
+    run(() => authClient.signUp.email({ email, password, name: displayName }), "Failed to sign up");
 
-      if (authError) {
-        setError(authError.message);
-        return { success: false, error: authError.message };
-      }
-
-      setUser(data.user);
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to sign in";
-      setError(message);
-      return { success: false, error: message };
-    } finally {
-      setLoading(false);
-    }
-  };
+  const signIn = (email: string, password: string) =>
+    run(() => authClient.signIn.email({ email, password }), "Failed to sign in");
 
   const signOut = async () => {
-    setError("");
-    try {
-      const { error: authError } = await supabase.auth.signOut();
-
-      if (authError) {
-        setError(authError.message);
-        return { success: false, error: authError.message };
-      }
-
-      setUser(null);
+    const result = await run(() => authClient.signOut(), "Failed to sign out");
+    if (result.success) {
+      clearProfileCache();
       router.push("/login");
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to sign out";
-      setError(message);
-      return { success: false, error: message };
     }
+    return result;
   };
 
-  const resetPassword = async (email: string) => {
-    setError("");
-    setLoading(true);
-    try {
-      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-        // Must be listed in Supabase Auth > URL Configuration > Redirect URLs,
-        // otherwise Supabase silently falls back to the Site URL.
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
+  /** Emails a reset link pointing to /reset-password?token=… */
+  const resetPassword = (email: string) =>
+    run(
+      () => authClient.requestPasswordReset({ email, redirectTo: "/reset-password" }),
+      "Failed to send reset email"
+    );
 
-      if (authError) {
-        setError(authError.message);
-        return { success: false, error: authError.message };
-      }
-
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to send reset email";
-      setError(message);
-      return { success: false, error: message };
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const updatePassword = async (newPassword: string) => {
-    setError("");
-    setLoading(true);
-    try {
-      const { data, error: authError } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-
-      if (authError) {
-        setError(authError.message);
-        return { success: false, error: authError.message };
-      }
-
-      setUser(data.user);
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update password";
-      setError(message);
-      return { success: false, error: message };
-    } finally {
-      setLoading(false);
-    }
-  };
+  /** Sets a new password with the token from the reset link */
+  const updatePassword = (token: string, newPassword: string) =>
+    run(() => authClient.resetPassword({ token, newPassword }), "Failed to update password");
 
   return {
     user,
-    loading,
+    loading: isPending || pending,
     error,
     signUp,
     signIn,

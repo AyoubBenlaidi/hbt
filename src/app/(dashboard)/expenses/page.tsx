@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/components/ui/Toast";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import { listMyHouseholdNames } from "@/server/actions/households";
+import { deleteExpense, listExpenses } from "@/server/actions/expenses";
 import { PremiumCard, ActionButton } from "@/components/ui/PremiumComponents";
 import { ExpenseItem } from "@/components/expenses/ExpenseItem";
 import { colors, spacing } from "@/lib/designSystem";
@@ -54,26 +56,10 @@ export default function ExpensesPage() {
 
     const fetchHouseholds = async () => {
       try {
-        const { data: memberData } = await supabase
-          .from("household_members")
-          .select("household_id")
-          .eq("user_id", user.id);
+        const data = unwrap(await listMyHouseholdNames());
 
-        const householdIds = memberData?.map((m) => m.household_id) || [];
-
-        if (householdIds.length === 0) {
-          setHouseholds([]);
-          setLoading(false);
-          return;
-        }
-
-        const { data } = await supabase
-          .from("households")
-          .select("id, name")
-          .in("id", householdIds);
-
-        setHouseholds(data || []);
-        if (data && data.length > 0) {
+        setHouseholds(data);
+        if (data.length > 0) {
           setSelectedHouseholdId(data[0].id);
         }
       } catch (err) {
@@ -92,47 +78,7 @@ export default function ExpensesPage() {
 
     const fetchExpenses = async () => {
       try {
-        const { data, error: err } = await supabase
-          .from("expenses")
-          .select(`
-            id,
-            description,
-            amount,
-            currency,
-            expense_date,
-            expense_kind,
-            notes,
-            created_by_user_id,
-            household_id,
-            created_at,
-            updated_at,
-            expense_payers(
-              amount,
-              household_members(
-                id,
-                user_id,
-                users(
-                  display_name
-                )
-              )
-            ),
-            expense_splits(
-              amount,
-              household_members(
-                id,
-                user_id,
-                users(
-                  display_name
-                )
-              )
-            )
-          `)
-          .eq("household_id", selectedHouseholdId)
-          .is("deleted_at", null)
-          .order("expense_date", { ascending: false });
-
-        if (err) throw err;
-        setExpenses((data || []) as any);
+        setExpenses(unwrap(await listExpenses(selectedHouseholdId)) as any);
       } catch (err) {
         console.error("Error fetching expenses:", err);
       }
@@ -145,12 +91,7 @@ export default function ExpensesPage() {
     if (!confirm("Are you sure you want to delete this expense?")) return;
 
     try {
-      const { error: err } = await supabase
-        .from("expenses")
-        .update({ deleted_at: new Date().toISOString() })
-        .eq("id", expenseId);
-
-      if (err) throw err;
+      unwrap(await deleteExpense(expenseId));
 
       setExpenses(expenses.filter((e) => e.id !== expenseId));
       addToast("Expense deleted successfully!", "success", 2000);

@@ -5,11 +5,22 @@ import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useToast } from "@/components/ui/Toast";
-import { supabase } from "@/lib/supabase/client";
+import { unwrap } from "@/lib/actionResult";
+import {
+  approveJoinRequest,
+  deleteHousehold,
+  getHouseholdDetail,
+  inviteMemberByEmail,
+  regenerateJoinCode,
+  rejectJoinRequest,
+  removeMember,
+  renameHousehold,
+  setJoinCodeEnabled,
+} from "@/server/actions/households";
 import { PremiumCard, ActionButton } from "@/components/ui/PremiumComponents";
 import { MemberCard } from "@/components/households/MemberCard";
 import { colors, spacing, transitions } from "@/lib/designSystem";
-import { generateJoinCode, formatCodeForDisplay } from "@/lib/joinCode";
+import { formatCodeForDisplay } from "@/lib/joinCode";
 import { useTranslations } from "@/hooks/useI18n";
 
 interface Household {
@@ -92,39 +103,16 @@ export default function HouseholdDetailPage() {
       try {
         setLoading(true);
 
-        const { data: householdData, error: householdError } = await supabase
-          .from("households")
-          .select("*")
-          .eq("id", householdId)
-          .single();
+        const detail = unwrap(await getHouseholdDetail(householdId));
+        if (!detail) return; // not found or not a member: the page shows "not found"
 
-        if (householdError) throw householdError;
-        setHousehold(householdData);
-        setEditingName(householdData.name);
-        const ownerFlag = householdData.created_by_user_id === user.id;
-        setIsOwner(ownerFlag);
-
-        const { data: membersData, error: membersError } = await supabase
-          .from("household_members")
-          .select(`
-            id,
-            user_id,
-            role,
-            status,
-            joined_at,
-            users (
-              email,
-              display_name
-            )
-          `)
-          .eq("household_id", householdId);
-
-        if (membersError) throw membersError;
-        setMembers(membersData || []);
-
-        // Fetch join requests if owner
-        if (ownerFlag) {
-          await fetchJoinRequests();
+        setHousehold(detail.household);
+        setEditingName(detail.household.name);
+        setIsOwner(detail.household.created_by_user_id === user.id);
+        setMembers(detail.members);
+        if (detail.joinRequests) {
+          setJoinRequests(detail.joinRequests.pending);
+          setReviewedRequests(detail.joinRequests.reviewed);
         }
       } catch (err) {
         console.error("Error fetching household:", err);
@@ -138,101 +126,16 @@ export default function HouseholdDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, householdId]);
 
-  const fetchJoinRequests = async () => {
-    // Pending
-    const { data: pending } = await supabase
-      .from("household_join_requests")
-      .select("*")
-      .eq("household_id", householdId)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
-
-    // Reviewed (approved/rejected) — last 20
-    const { data: reviewed } = await supabase
-      .from("household_join_requests")
-      .select("*")
-      .eq("household_id", householdId)
-      .in("status", ["approved", "rejected"])
-      .order("reviewed_at", { ascending: false })
-      .limit(20);
-
-    // Enrich with profile data
-    const allRequests = [...(pending || []), ...(reviewed || [])];
-    const userIds = [...new Set(allRequests.map((r) => r.requester_user_id))];
-
-    let profiles: Record<string, { pseudo: string; avatar_color: string }> = {};
-    if (userIds.length > 0) {
-      const { data: profileData } = await supabase
-        .from("user_profiles")
-        .select("id, pseudo, avatar_color")
-        .in("id", userIds);
-
-      if (profileData) {
-        profileData.forEach((p: any) => {
-          profiles[p.id] = { pseudo: p.pseudo, avatar_color: p.avatar_color };
-        });
-      }
-    }
-
-    const enrich = (r: any): JoinRequest => ({
-      ...r,
-      requester_pseudo: profiles[r.requester_user_id]?.pseudo || "Unknown user",
-      requester_avatar_color: profiles[r.requester_user_id]?.avatar_color || "#9B8E7F",
-    });
-
-    setJoinRequests((pending || []).map(enrich));
-    setReviewedRequests((reviewed || []).map(enrich));
-  };
-
   const handleApproveRequest = async (request: JoinRequest) => {
     try {
-      // Check if already member
-      const { data: existing } = await supabase
-        .from("household_members")
-        .select("id")
-        .eq("household_id", householdId)
-        .eq("user_id", request.requester_user_id)
-        .single();
-
-      if (existing) {
-        // Already a member, just mark approved
-        await supabase
-          .from("household_join_requests")
-          .update({ status: "approved", reviewed_at: new Date().toISOString(), reviewed_by_user_id: user?.id })
-          .eq("id", request.id);
-
-        setJoinRequests((prev) => prev.filter((r) => r.id !== request.id));
-        addToast("User is already a member", "info", 2000);
-        return;
-      }
-
-      // Add as member
-      const { error: memberErr } = await supabase
-        .from("household_members")
-        .insert({
-          household_id: householdId,
-          user_id: request.requester_user_id,
-          role: "member",
-          status: "active",
-        });
-
-      if (memberErr) throw memberErr;
-
-      // Mark request approved
-      await supabase
-        .from("household_join_requests")
-        .update({ status: "approved", reviewed_at: new Date().toISOString(), reviewed_by_user_id: user?.id })
-        .eq("id", request.id);
-
-      // Refresh members
-      const { data: updatedMembers } = await supabase
-        .from("household_members")
-        .select(`id, user_id, role, status, joined_at, users ( email, display_name )`)
-        .eq("household_id", householdId);
-
-      setMembers(updatedMembers || []);
+      const result = unwrap(await approveJoinRequest(request.id));
+      setMembers(result.members);
       setJoinRequests((prev) => prev.filter((r) => r.id !== request.id));
-      addToast(`${request.requester_pseudo} joined the household`, "success", 3000);
+      if (result.alreadyMember) {
+        addToast("User is already a member", "info", 2000);
+      } else {
+        addToast(`${request.requester_pseudo} joined the household`, "success", 3000);
+      }
     } catch (err) {
       console.error("Error approving request:", err);
       addToast("Failed to approve request", "error", 2000);
@@ -241,10 +144,7 @@ export default function HouseholdDetailPage() {
 
   const handleRejectRequest = async (request: JoinRequest) => {
     try {
-      await supabase
-        .from("household_join_requests")
-        .update({ status: "rejected", reviewed_at: new Date().toISOString(), reviewed_by_user_id: user?.id })
-        .eq("id", request.id);
+      unwrap(await rejectJoinRequest(request.id));
 
       setJoinRequests((prev) => prev.filter((r) => r.id !== request.id));
       addToast("Request declined", "success", 2000);
@@ -269,13 +169,7 @@ export default function HouseholdDetailPage() {
     if (!household) return;
     setIsRegenerating(true);
     try {
-      const newCode = generateJoinCode();
-      const { error } = await supabase
-        .from("households")
-        .update({ join_code: newCode, join_code_updated_at: new Date().toISOString() })
-        .eq("id", householdId);
-
-      if (error) throw error;
+      const newCode = unwrap(await regenerateJoinCode(householdId));
 
       setHousehold({ ...household, join_code: newCode });
       setShowRegenerateConfirm(false);
@@ -293,12 +187,7 @@ export default function HouseholdDetailPage() {
     setIsTogglingCode(true);
     try {
       const newEnabled = !household.join_code_enabled;
-      const { error } = await supabase
-        .from("households")
-        .update({ join_code_enabled: newEnabled })
-        .eq("id", householdId);
-
-      if (error) throw error;
+      unwrap(await setJoinCodeEnabled(householdId, newEnabled));
 
       setHousehold({ ...household, join_code_enabled: newEnabled });
       addToast(newEnabled ? "Join code enabled" : "Join code paused", "success", 2000);
@@ -323,48 +212,18 @@ export default function HouseholdDetailPage() {
 
     setIsInviting(true);
     try {
-      const { data: userData, error: userError } = await supabase
-        .from("users")
-        .select("id")
-        .eq("email", inviteEmail)
-        .single();
+      const result = unwrap(await inviteMemberByEmail(householdId, inviteEmail));
 
-      if (userError || !userData) {
+      if (result.status === "not_found") {
         addToast(`User with email "${inviteEmail}" not found. They need to create an account first.`, "error", 3000);
         return;
       }
-
-      const { data: existing } = await supabase
-        .from("household_members")
-        .select("id")
-        .eq("household_id", householdId)
-        .eq("user_id", userData.id)
-        .single();
-
-      if (existing) {
+      if (result.status === "already_member") {
         addToast("This user is already a member", "info", 2000);
         return;
       }
 
-      const { error: insertError } = await supabase
-        .from("household_members")
-        .insert({
-          household_id: householdId,
-          user_id: userData.id,
-          role: "member",
-          status: "active",
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-
-      const { data: updatedMembers } = await supabase
-        .from("household_members")
-        .select(`id, user_id, role, status, joined_at, users ( email, display_name )`)
-        .eq("household_id", householdId);
-
-      setMembers(updatedMembers || []);
+      setMembers(result.members);
       setInviteEmail("");
       addToast("Member invited successfully!", "success", 3000);
     } catch (err) {
@@ -383,12 +242,7 @@ export default function HouseholdDetailPage() {
     if (!confirm("Are you sure you want to remove this member?")) return;
 
     try {
-      const { error: err } = await supabase
-        .from("household_members")
-        .delete()
-        .eq("id", memberId);
-
-      if (err) throw err;
+      unwrap(await removeMember(householdId, memberId));
       setMembers(members.filter((m) => m.id !== memberId));
       addToast("Member removed successfully", "success", 3000);
     } catch (err) {
@@ -409,12 +263,7 @@ export default function HouseholdDetailPage() {
 
     setIsSavingName(true);
     try {
-      const { error: err } = await supabase
-        .from("households")
-        .update({ name: editingName.trim() })
-        .eq("id", householdId);
-
-      if (err) throw err;
+      unwrap(await renameHousehold(householdId, editingName));
       setHousehold({ ...household!, name: editingName.trim() });
       setIsEditMode(false);
       addToast("Household name updated successfully", "success", 3000);
@@ -431,35 +280,7 @@ export default function HouseholdDetailPage() {
 
     setIsDeleting(true);
     try {
-      // Delete join requests
-      await supabase
-        .from("household_join_requests")
-        .delete()
-        .eq("household_id", householdId);
-
-      // Get all expenses for this household
-      const { data: expenses } = await supabase
-        .from("expenses")
-        .select("id")
-        .eq("household_id", householdId);
-
-      if (expenses && expenses.length > 0) {
-        const expenseIds = expenses.map((e) => e.id);
-
-        // Delete expense payers and splits
-        await supabase.from("expense_payers").delete().in("expense_id", expenseIds);
-        await supabase.from("expense_splits").delete().in("expense_id", expenseIds);
-
-        // Delete expenses
-        await supabase.from("expenses").delete().eq("household_id", householdId);
-      }
-
-      // Delete household members
-      await supabase.from("household_members").delete().eq("household_id", householdId);
-
-      // Delete household
-      const { error } = await supabase.from("households").delete().eq("id", householdId);
-      if (error) throw error;
+      unwrap(await deleteHousehold(householdId));
 
       addToast(t("households.deleteSuccess"), "success", 2000);
       router.push("/households");
